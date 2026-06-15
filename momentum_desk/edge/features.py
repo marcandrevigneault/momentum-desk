@@ -95,7 +95,11 @@ def _ext_vwap_pct(c: FeatureContext) -> float | None:
 
 
 def _move_from_open_pct(c: FeatureContext) -> float | None:
-    o = c.cand.day_open
+    # Point-in-time anchor. In the pre-market session the 09:30 `day_open` hasn't
+    # happened yet, so referencing it leaks the future — use the first known
+    # (pre-market) bar's open instead. Regular/intraday entries are after 09:30,
+    # where day_open is already known.
+    o = c.bars[0].o if c.session == "premarket" else c.cand.day_open
     return 100.0 * (c.entry_price - o) / o if o > 0 else None
 
 
