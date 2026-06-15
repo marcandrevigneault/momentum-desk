@@ -38,6 +38,15 @@ def test_more_premarket_slippage_never_helps():
     assert hi.metrics.total_pnl <= lo.metrics.total_pnl
 
 
+def test_time_of_day_exit_caps_the_hold():
+    # force flat at 10:00 ET (tod 600 → 360 min after the 04:00 start)
+    res = Backtester(SyntheticHistory(days=40, session="premarket"),
+                     bt=BacktestConfig(session="premarket", time_exit_tod=600)).run()
+    assert res.metrics.trades > 0
+    assert all(t.exit_t <= 360 for t in res.trades)          # nothing held past 10:00
+    assert any(t.exit_reason == "time-cap" for t in res.trades)  # the cap actually fires
+
+
 def test_regular_session_unaffected_by_premarket_changes():
     # the default (regular) path still produces trades — no regression
     res = Backtester(SyntheticHistory(days=40)).run()

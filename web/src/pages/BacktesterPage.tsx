@@ -34,13 +34,14 @@ export default function BacktesterPage() {
   const [targetR, setTargetR] = useState(2.0);
   const [slippage, setSlippage] = useState(0.5);
   const [maxHold, setMaxHold] = useState(60);
+  const [timeExit, setTimeExit] = useState(630);   // 0=off, 600=10:00, 630=10:30
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState<BacktestRun | null>(null);
 
   const go = async () => {
     setBusy(true);
     try {
-      setRun(await runBacktest({ session, days, target_r: targetR, slippage_pct: slippage, max_hold: maxHold }));
+      setRun(await runBacktest({ session, days, target_r: targetR, slippage_pct: slippage, max_hold: maxHold, time_exit_tod: timeExit }));
     } finally {
       setBusy(false);
     }
@@ -70,6 +71,14 @@ export default function BacktesterPage() {
         </Field>
         <Field label="Max hold (min)">
           <input className={`${inputCls} w-20`} style={inputStyle} type="number" step={5} value={maxHold} onChange={(e) => setMaxHold(+e.target.value)} />
+        </Field>
+        <Field label="Force flat at">
+          <select className={inputCls} style={inputStyle} value={timeExit} onChange={(e) => setTimeExit(+e.target.value)}>
+            <option value={0}>no cap</option>
+            <option value={600}>10:00 ET</option>
+            <option value={630}>10:30 ET (fade)</option>
+            <option value={660}>11:00 ET</option>
+          </select>
         </Field>
         <button className="btn btn-buy" disabled={busy} onClick={go}>{busy ? "Running…" : "▶ Run backtest"}</button>
       </div>
