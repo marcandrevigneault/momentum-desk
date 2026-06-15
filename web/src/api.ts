@@ -42,9 +42,14 @@ export async function runBacktest(p: BacktestParams) {
   return r.json();
 }
 
-export async function getRealRun() {
-  const r = await fetch("/api/realrun");
-  return r.json();
+export async function listRuns(): Promise<import("./types").RunSummary[]> {
+  const r = await fetch("/api/backtest/runs");
+  return (await r.json()).runs ?? [];
+}
+
+export async function getRun(id: string) {
+  const r = await fetch(`/api/backtest/runs/${id}`);
+  return (await r.json()).result;
 }
 
 export async function launchRealBacktest(p: BacktestParams) {

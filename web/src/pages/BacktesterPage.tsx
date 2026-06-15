@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { getRealRun, launchRealBacktest, pollJob, runBacktest } from "../api";
-import type { BacktestRun, PeriodRow } from "../types";
+import { getRun, launchRealBacktest, listRuns, pollJob, runBacktest } from "../api";
+import type { BacktestRun, PeriodRow, RunSummary } from "../types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -93,8 +93,13 @@ export default function BacktesterPage() {
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState<BacktestRun | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [showRuns, setShowRuns] = useState(false);
 
   const params = { session, days, target_r: targetR, slippage_pct: slippage, max_hold: maxHold, time_exit_tod: timeExit };
+
+  const refreshRuns = () => listRuns().then(setRuns).catch(() => {});
+  useEffect(() => { refreshRuns(); }, []);
 
   const go = async () => {
     setBusy(true);
@@ -119,16 +124,17 @@ export default function BacktesterPage() {
       }
     } finally {
       setBusy(false);
+      refreshRuns();
     }
   };
 
-  const loadReal = async () => {
+  const openRun = async (id: string) => {
     setBusy(true);
-    setNote(null);
+    setShowRuns(false);
     try {
-      const r = await getRealRun();
-      if (r.available) setRun(r);
-      else setNote("No real run found yet — run scripts/realrun.py with your Massive key (it writes data/realrun.json).");
+      const result = await getRun(id);
+      if (result) { setRun(result); setNote(null); }
+      else setNote("that run could not be loaded");
     } finally {
       setBusy(false);
     }
@@ -174,9 +180,59 @@ export default function BacktesterPage() {
           </select>
         </Field>
         <button className="btn btn-buy" disabled={busy} onClick={go}>{busy ? "Running…" : "▶ Run backtest"}</button>
-        <button className="btn" disabled={busy} onClick={loadReal} title="Load the latest local multi-year real-data run">↑ Load real run</button>
+        <button className="btn" onClick={() => { setShowRuns((v) => !v); refreshRuns(); }} title="Browse saved backtest runs">
+          🗂 Runs ({runs.length})
+        </button>
         {note && <span className="mono text-[11px]" style={{ color: "var(--amber)" }}>{note}</span>}
       </div>
+
+      {showRuns && (
+        <div className="px-4 py-2 shrink-0" style={{ background: "var(--panel)", borderBottom: "1px solid var(--line)", maxHeight: 220, overflow: "auto" }}>
+          {runs.length === 0 ? (
+            <div className="text-[12px] py-2" style={{ color: "var(--muted)" }}>
+              No saved runs yet — run a backtest (synthetic or real) and it'll be saved here.
+            </div>
+          ) : (
+            <table className="w-full border-collapse mono text-[12px]">
+              <thead style={{ color: "var(--muted)" }}>
+                <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                  <th className="text-left px-2 py-1">When</th><th className="text-left px-2 py-1">Kind</th>
+                  <th className="text-left px-2 py-1">Session</th><th className="text-right px-2 py-1">Days</th>
+                  <th className="text-right px-2 py-1">Trades</th><th className="text-right px-2 py-1">R/trade</th>
+                  <th className="text-right px-2 py-1">P&L</th><th className="text-right px-2 py-1">MaxDD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((r) => (
+                  <tr key={r.id} onClick={() => openRun(r.id)} className="cursor-pointer"
+                      style={{ borderBottom: "1px solid var(--line)" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--panel-2)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+                    <td className="px-2 py-1" style={{ color: "var(--muted)" }}>
+                      {r.ts ? new Date(r.ts * 1000).toLocaleString() : "—"}
+                    </td>
+                    <td className="px-2 py-1">
+                      <span className="flag" style={{ background: r.synthetic ? "rgba(139,148,158,.15)" : "rgba(52,211,153,.15)", color: r.synthetic ? "var(--muted)" : "var(--green)" }}>
+                        {r.synthetic ? "synthetic" : "real"}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1">{r.session}</td>
+                    <td className="px-2 py-1 text-right">{r.days}</td>
+                    <td className="px-2 py-1 text-right">{r.trades}</td>
+                    <td className="px-2 py-1 text-right" style={{ color: (r.expectancy_r ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}>
+                      {(r.expectancy_r ?? 0) >= 0 ? "+" : ""}{(r.expectancy_r ?? 0).toFixed(3)}
+                    </td>
+                    <td className="px-2 py-1 text-right font-bold" style={{ color: (r.total_pnl ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}>
+                      {(r.total_pnl ?? 0) >= 0 ? "+" : ""}{(r.total_pnl ?? 0).toFixed(0)}
+                    </td>
+                    <td className="px-2 py-1 text-right" style={{ color: "var(--amber)" }}>{(r.max_drawdown_pct ?? 0).toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       <div className="grow min-h-0 overflow-auto p-4">
         {!run ? (
