@@ -1,0 +1,126 @@
+"""FastAPI backend: runs the scan loop and streams ranked signals to the
+dashboard over a WebSocket, plus a couple of REST endpoints for the initial
+load and the header.
+
+    uvicorn momentum_desk.server:app --reload --port 8000
+
+Defaults to the mock feed, so it serves live-looking data with no key.
+"""
+from __future__ import annotations
+
+import asyncio
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+
+from .config import AppConfig, build_adapter, load_config
+from .models import Signal
+from .risk import RiskEngine
+from .scanner import ScannerEngine
+
+
+class ScannerService:
+    """Holds the live pipeline and produces one serializable scan on demand."""
+
+    def __init__(self, cfg: AppConfig) -> None:
+        self.cfg = cfg
+        self.adapter = build_adapter(cfg)
+        self.scanner = ScannerEngine(cfg.scanner)
+        self.risk = RiskEngine(cfg.risk)
+
+    async def scan_once(self) -> dict:
+        # adapters do blocking I/O (HTTP); keep the event loop free
+        snaps = await asyncio.to_thread(lambda: list(self.adapter.poll()))
+        by_symbol = {s.symbol: s for s in snaps}
+        signals = self.scanner.scan(snaps)
+        return {
+            "ts": max((s.ts for s in snaps), default=0.0),
+            "feed": self.adapter.name,
+            "mode": self.cfg.mode,
+            "count": len(signals),
+            "signals": [self._signal_dict(s, by_symbol.get(s.symbol)) for s in signals],
+            "account": {
+                "equity": self.risk.config.account_equity,
+                "realized_pnl_today": round(self.risk.realized_pnl_today, 2),
+                "daily_loss_limit_hit": self.risk.daily_loss_limit_hit,
+            },
+        }
+
+    def _signal_dict(self, s: Signal, snap) -> dict:
+        d = {
+            "symbol": s.symbol, "score": s.score, "last": s.last,
+            "gap_pct": s.gap_pct, "relative_volume": s.relative_volume,
+            "extension_above_vwap_pct": s.extension_above_vwap_pct,
+            "float_millions": s.float_millions, "has_news": s.has_news,
+            "news_headline": s.news_headline, "actionable": s.actionable,
+            "flags": [f.value for f in s.flags],
+        }
+        # attach an illustrative risk-sized plan (5% stop) for actionable names
+        if s.actionable and snap is not None:
+            plan = self.risk.plan(snap, entry=s.last, stop=round(s.last * 0.95, 2))
+            d["plan"] = {
+                "ok": plan.ok, "shares": plan.shares, "entry": plan.entry,
+                "stop": plan.stop, "risk_dollars": plan.risk_dollars, "reasons": plan.reasons,
+            }
+        return d
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.service = ScannerService(load_config())
+    cfg = app.state.service.cfg
+    print(f"[server] feed={app.state.service.adapter.name} mode={cfg.mode} "
+          f"interval={cfg.scan_interval_s}s")
+    yield
+
+
+app = FastAPI(title="Momentum Desk", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+)
+
+
+@app.get("/api/health")
+async def health() -> dict:
+    return {"ok": True}
+
+
+@app.get("/api/config")
+async def get_config() -> dict:
+    svc: ScannerService = app.state.service
+    sc, rk = svc.cfg.scanner, svc.cfg.risk
+    return {
+        "mode": svc.cfg.mode, "feed": svc.adapter.name,
+        "scan_interval_s": svc.cfg.scan_interval_s,
+        "scanner": {
+            "min_price": sc.min_price, "max_price": sc.max_price,
+            "max_float_millions": sc.max_float_millions,
+            "min_relative_volume": sc.min_relative_volume,
+            "min_gap_pct": sc.min_gap_pct, "require_news": sc.require_news,
+            "max_extension_above_vwap_pct": sc.max_extension_above_vwap_pct,
+        },
+        "risk": {
+            "account_equity": rk.account_equity,
+            "max_risk_per_trade_pct": rk.max_risk_per_trade_pct,
+            "max_daily_loss_pct": rk.max_daily_loss_pct,
+            "max_pct_of_recent_volume": rk.max_pct_of_recent_volume,
+        },
+    }
+
+
+@app.get("/api/signals")
+async def signals() -> dict:
+    return await app.state.service.scan_once()
+
+
+@app.websocket("/ws/signals")
+async def ws_signals(ws: WebSocket) -> None:
+    await ws.accept()
+    svc: ScannerService = app.state.service
+    try:
+        while True:
+            await ws.send_json(await svc.scan_once())
+            await asyncio.sleep(svc.cfg.scan_interval_s)
+    except WebSocketDisconnect:
+        pass
