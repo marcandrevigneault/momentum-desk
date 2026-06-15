@@ -62,6 +62,15 @@ export interface Point {
   vwap: number;
 }
 
+export interface Candle {
+  time: number;   // epoch seconds
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 export interface Trade {
   symbol: string;
   qty: number;
