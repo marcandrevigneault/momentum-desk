@@ -22,3 +22,20 @@ export async function getTrades(): Promise<Trade[]> {
   const r = await fetch("/api/trades");
   return (await r.json()).trades ?? [];
 }
+
+export interface BacktestParams {
+  session: string;
+  days: number;
+  target_r: number;
+  slippage_pct: number;
+  max_hold: number;
+}
+
+export async function runBacktest(p: BacktestParams) {
+  const q = new URLSearchParams({
+    session: p.session, days: String(p.days), target_r: String(p.target_r),
+    slippage_pct: String(p.slippage_pct), max_hold: String(p.max_hold),
+  });
+  const r = await fetch(`/api/backtest?${q}`, { method: "POST" });
+  return r.json();
+}

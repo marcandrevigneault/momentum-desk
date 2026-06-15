@@ -79,6 +79,30 @@ body {
   color: #1a0606;
 }
 
+.hamburger {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.hamburger span {
+  display: block;
+  height: 2px;
+  width: 100%;
+  background: var(--text);
+  border-radius: 2px;
+}
+.hamburger:hover {
+  border-color: var(--green);
+}
+
 ::-webkit-scrollbar {
   width: 9px;
   height: 9px;

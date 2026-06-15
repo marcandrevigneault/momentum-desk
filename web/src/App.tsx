@@ -1,123 +1,76 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { getTrades } from "./api";
-import DetailPanel from "./components/DetailPanel";
-import Positions from "./components/Positions";
-import ScannerTable from "./components/ScannerTable";
-import Trades from "./components/Trades";
-import type { Point, Trade } from "./types";
-import { useScanner, type ConnState } from "./useScanner";
+import { useState } from "react";
+import BacktesterPage from "./pages/BacktesterPage";
+import CockpitPage from "./pages/CockpitPage";
 
-const HIST_CAP = 240;
+type Page = "cockpit" | "backtester";
 
-function ConnBadge({ state, feed }: { state: ConnState; feed?: string }) {
-  const map = {
-    live: { c: "var(--green)", t: "LIVE" },
-    connecting: { c: "var(--amber)", t: "CONNECTING" },
-    down: { c: "var(--red)", t: "RECONNECTING" },
-  }[state];
-  return (
-    <span className="badge inline-flex items-center gap-1.5" style={{ color: map.c, borderColor: map.c }}>
-      <span className="live-dot" style={{ width: 7, height: 7, borderRadius: 99, background: map.c }} />
-      {map.t}{feed ? ` · ${feed}` : ""}
-    </span>
-  );
-}
-
-const money = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-
-function Kpi({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <span className="mono text-[12px]" style={{ color: "var(--muted)" }}>
-      {label} <b style={{ color: color ?? "var(--text)" }}>{value}</b>
-    </span>
-  );
-}
+const NAV: { id: Page; label: string; icon: string; hint: string }[] = [
+  { id: "cockpit", label: "Cockpit", icon: "▦", hint: "live scanner, charts, paper trading" },
+  { id: "backtester", label: "Backtester", icon: "📈", hint: "run + visualize a strategy backtest" },
+];
 
 export default function App() {
-  const { data, state } = useScanner();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const histories = useRef<Map<string, Point[]>>(new Map());
-
-  // accumulate a live price history per symbol from each streamed tick
-  if (data) {
-    const seen = [...data.signals.map((s) => ({ sym: s.symbol, last: s.last, vwap: s.last })),
-                  ...data.positions.map((p) => ({ sym: p.symbol, last: p.last, vwap: p.last }))];
-    for (const { sym, last } of seen) {
-      const buf = histories.current.get(sym) ?? [];
-      const t = data.ts;
-      if (buf.length === 0 || buf[buf.length - 1].t !== t) {
-        buf.push({ t, last, vwap: last });
-        if (buf.length > HIST_CAP) buf.shift();
-        histories.current.set(sym, buf);
-      }
-    }
-  }
-
-  // refetch the closed-trades log whenever the closed count changes
-  const closedCount = data?.account.closed_trades ?? 0;
-  useEffect(() => {
-    getTrades().then(setTrades);
-  }, [closedCount]);
-
-  const acct = data?.account;
-  const selSignal = useMemo(() => data?.signals.find((s) => s.symbol === selected) ?? null, [data, selected]);
-  const selPos = useMemo(() => data?.positions.find((p) => p.symbol === selected) ?? null, [data, selected]);
-  const selPoints = selected ? histories.current.get(selected) ?? [] : [];
+  const [page, setPage] = useState<Page>("cockpit");
+  const [menu, setMenu] = useState(false);
+  const active = NAV.find((n) => n.id === page)!;
 
   return (
     <div className="h-full flex flex-col">
-      <header className="flex items-center gap-4 px-5 h-14 shrink-0" style={{ background: "var(--panel)", borderBottom: "1px solid var(--line)" }}>
-        <h1 className="m-0 text-[17px] font-bold tracking-tight">
-          Momentum&nbsp;Desk<span className="mono text-[11px] font-medium ml-2" style={{ color: "var(--muted)" }}>cockpit</span>
+      {/* shell top bar */}
+      <header className="flex items-center gap-3 px-4 h-12 shrink-0 relative z-30" style={{ background: "var(--panel)", borderBottom: "1px solid var(--line)" }}>
+        <button
+          className="hamburger"
+          aria-label="menu"
+          onClick={() => setMenu((v) => !v)}
+        >
+          <span /><span /><span />
+        </button>
+        <h1 className="m-0 text-[16px] font-bold tracking-tight">
+          Momentum&nbsp;Desk
+          <span className="mono text-[11px] font-medium ml-2" style={{ color: "var(--muted)" }}>{active.label.toLowerCase()}</span>
         </h1>
-        <ConnBadge state={state} feed={data?.feed} />
-        {data && (
-          <span className="badge" style={{ color: data.mode === "live" ? "var(--red)" : "var(--green)", borderColor: data.mode === "live" ? "var(--red)" : "var(--green)" }}>
-            {data.mode}
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-5">
-          {acct && (
-            <>
-              <Kpi label="equity" value={money(acct.equity)} />
-              <Kpi label="day P&L" value={`${acct.day_pnl >= 0 ? "+" : ""}${money(acct.day_pnl)}`} color={acct.day_pnl < 0 ? "var(--red)" : "var(--green)"} />
-              <Kpi label="unreal" value={`${acct.unrealized_pnl >= 0 ? "+" : ""}${money(acct.unrealized_pnl)}`} color={acct.unrealized_pnl < 0 ? "var(--red)" : "var(--green)"} />
-              <Kpi label="open" value={String(acct.open_positions)} />
-              {acct.daily_loss_limit_hit && <span className="badge" style={{ color: "var(--red)", borderColor: "var(--red)" }}>⛔ daily stop</span>}
-            </>
-          )}
-        </div>
       </header>
 
-      <main className="grow min-h-0 flex" style={{ background: "var(--bg)" }}>
-        {/* left: scanner */}
-        <section className="flex flex-col min-w-0" style={{ flex: "1 1 52%", borderRight: "1px solid var(--line)" }}>
-          <div className="section-title px-3 py-1.5 shrink-0">Scanner{data ? ` · ${data.count} candidates` : ""}</div>
-          <div className="grow min-h-0">
-            <ScannerTable signals={data?.signals ?? []} selected={selected} onSelect={setSelected} />
-          </div>
-        </section>
+      {/* slide-in nav drawer + backdrop */}
+      {menu && <div className="fixed inset-0 z-20" style={{ background: "rgba(0,0,0,.5)" }} onClick={() => setMenu(false)} />}
+      <nav
+        className="fixed top-0 left-0 h-full z-30 flex flex-col transition-transform duration-200"
+        style={{
+          width: 248, background: "var(--panel)", borderRight: "1px solid var(--line)",
+          transform: menu ? "translateX(0)" : "translateX(-100%)",
+        }}
+      >
+        <div className="h-12 flex items-center px-4 font-bold text-[15px] shrink-0" style={{ borderBottom: "1px solid var(--line)" }}>
+          Momentum Desk
+        </div>
+        <div className="p-2 flex flex-col gap-1">
+          {NAV.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => { setPage(n.id); setMenu(false); }}
+              className="text-left rounded-lg px-3 py-2.5 flex items-start gap-3"
+              style={{
+                background: page === n.id ? "var(--panel-2)" : "transparent",
+                boxShadow: page === n.id ? "inset 2px 0 0 var(--green)" : undefined,
+              }}
+            >
+              <span className="text-[15px]">{n.icon}</span>
+              <span className="flex flex-col">
+                <span className="font-semibold text-[13px]">{n.label}</span>
+                <span className="text-[11px]" style={{ color: "var(--muted)" }}>{n.hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-auto p-3 text-[10px] mono" style={{ color: "var(--muted)", borderTop: "1px solid var(--line)" }}>
+          paper-first · not advice
+        </div>
+      </nav>
 
-        {/* right: chart + positions + trades */}
-        <section className="flex flex-col min-w-0" style={{ flex: "1 1 48%" }}>
-          <div style={{ height: "44%", borderBottom: "1px solid var(--line)" }}>
-            <DetailPanel signal={selSignal} position={selPos} points={selPoints} />
-          </div>
-          <div style={{ height: "28%", borderBottom: "1px solid var(--line)" }}>
-            <Positions positions={data?.positions ?? []} onSelect={setSelected} selected={selected} />
-          </div>
-          <div style={{ height: "28%" }}>
-            <Trades trades={trades} />
-          </div>
-        </section>
-      </main>
-
-      <footer className="shrink-0 px-5 py-2 text-[11px] mono flex items-center gap-4" style={{ background: "var(--panel)", borderTop: "1px solid var(--line)", color: "var(--muted)" }}>
-        <span>● actionable</span>
-        <span style={{ opacity: 0.62 }}>○ flagged — don't chase</span>
-        <span className="ml-auto">Paper-first · simulated broker · mock data unless a real feed is configured. Not advice.</span>
-      </footer>
+      {/* active page */}
+      <div className="grow min-h-0">
+        {page === "cockpit" ? <CockpitPage /> : <BacktesterPage />}
+      </div>
     </div>
   );
 }

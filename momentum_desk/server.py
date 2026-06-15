@@ -212,6 +212,37 @@ async def trades() -> dict:
     return {"trades": app.state.service.desk.trades_view()}
 
 
+@app.post("/api/backtest")
+async def backtest(session: str = "premarket", days: int = 60, target_r: float = 2.0,
+                   slippage_pct: float = 0.1, max_hold: int = 60) -> dict:
+    """Run a backtest and return its equity curve, metrics, and trades for the
+    visualizer. Uses synthetic data here (the hosted app has no data key), so
+    results are an engine illustration, not strategy evidence."""
+    from dataclasses import asdict
+
+    from .backtest import Backtester, SyntheticHistory
+    from .backtest.engine import BacktestConfig
+
+    session = "premarket" if session == "premarket" else "regular"
+    days = max(5, min(int(days), 120))
+
+    def run():
+        prov = SyntheticHistory(days=days, session=session)
+        bt = BacktestConfig(session=session, target_r=target_r, max_hold_minutes=max_hold,
+                            slippage_pct=slippage_pct, premarket_slippage_pct=slippage_pct)
+        return Backtester(prov, bt=bt).run()
+
+    res = await asyncio.to_thread(run)
+    return {
+        "synthetic": True,
+        "session": session,
+        "days": res.days,
+        "metrics": asdict(res.metrics),
+        "equity_curve": res.equity_curve,
+        "trades": [asdict(t) for t in res.trades],
+    }
+
+
 @app.post("/api/trade/open/{symbol}")
 async def trade_open(symbol: str) -> dict:
     svc: ScannerService = app.state.service

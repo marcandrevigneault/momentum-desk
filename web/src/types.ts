@@ -74,3 +74,37 @@ export interface Trade {
   opened_ts: number;
   closed_ts: number;
 }
+
+export interface BacktestMetrics {
+  trades: number;
+  win_rate: number;
+  profit_factor: number;
+  avg_win: number;
+  avg_loss: number;
+  expectancy: number;
+  expectancy_r: number;
+  total_pnl: number;
+  return_pct: number;
+  max_drawdown: number;
+  max_drawdown_pct: number;
+}
+
+export interface BacktestTrade {
+  symbol: string;
+  day: string;
+  entry: number;
+  exit: number;
+  shares: number;
+  exit_reason: string;
+  r_multiple: number;
+  pnl: number;
+}
+
+export interface BacktestRun {
+  synthetic: boolean;
+  session: string;
+  days: number;
+  metrics: BacktestMetrics;
+  equity_curve: number[];
+  trades: BacktestTrade[];
+}
