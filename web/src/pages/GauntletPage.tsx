@@ -39,6 +39,15 @@ function SessionCard({ s }: { s: GauntletSession }) {
         {s.verdict}
       </div>
 
+      {/* fat-tail caveat — a high kurtosis means the edge rides on rare outliers */}
+      {s.kurt >= 8 && (
+        <div className="px-4 py-2 text-[11px]" style={{ background: "rgba(251,191,36,.06)", color: "var(--amber)", borderBottom: "1px solid var(--line)" }}>
+          ⚠ Fat-tailed: skew {fmt(s.skew, 1)}, kurtosis {s.kurt.toFixed(0)} (normal = 3). The expectancy is
+          carried by rare extreme winners — expect long flat stretches, and the magnitude is fragile to fills
+          / halts on exactly those few trades. Direction is robust; magnitude is not a smooth per-trade number.
+        </div>
+      )}
+
       {/* headline stats */}
       <div className="px-4 py-3 grid grid-cols-3 gap-3" style={{ borderBottom: "1px solid var(--line)" }}>
         <Stat label="expectancy" value={`${fmt(s.expectancy_r)}R`} color={rColor(s.expectancy_r)} />
