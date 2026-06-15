@@ -1,0 +1,29 @@
+# Copy to config.yaml (gitignored) and edit. Never commit real credentials.
+
+mode: paper            # paper | live  — start, and stay, on paper until proven
+
+data_feed: mock        # mock | polygon | finnhub | ibkr
+polygon_api_key: ""    # set if data_feed: polygon
+finnhub_api_key: ""    # set if data_feed: finnhub
+
+ibkr:
+  host: 127.0.0.1
+  port: 7497           # 7497 = TWS paper, 7496 = TWS live, 4002 = Gateway paper
+  client_id: 17
+
+scanner:
+  min_price: 1.0
+  max_price: 20.0
+  max_float_millions: 20.0
+  min_relative_volume: 5.0
+  min_gap_pct: 10.0
+  require_news: true
+  max_extension_above_vwap_pct: 8.0   # anti-chase guard
+
+risk:
+  account_equity: 25000
+  max_risk_per_trade_pct: 1.0
+  max_daily_loss_pct: 3.0             # circuit breaker
+  max_position_pct_of_equity: 25.0
+  max_pct_of_recent_volume: 1.0       # "you would be the liquidity" guard
+  min_stop_distance_pct: 1.0

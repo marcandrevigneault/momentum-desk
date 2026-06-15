@@ -1,0 +1,24 @@
+# The core scanner/risk engine and the mock demo run on the standard library
+# alone — `python -m momentum_desk.cli` needs nothing installed.
+#
+# These are for the layers we build next; install when you get there:
+
+# --- web dashboard (real-time) ---
+# fastapi
+# uvicorn[standard]
+# websockets
+
+# --- broker: IBKR (paper-first) ---
+# ib-async            # maintained fork of ib_insync; talks to TWS / IB Gateway
+
+# --- real market data (pick one; see README "Data feed") ---
+# polygon-api-client
+# finnhub-python
+
+# --- backtesting / analysis ---
+# pandas
+# numpy
+
+# --- dev ---
+# pytest
+# ruff

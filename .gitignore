@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets & local config — NEVER commit broker creds or API keys
+config.yaml
+config.local.yaml
+.env
+*.key
+
+# Data / logs
+*.log
+data/
+journal/
+*.sqlite
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
