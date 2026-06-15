@@ -7,8 +7,19 @@ catalyst in a tradable price band — and, just as importantly, refuses to let
 you chase the part of a move where you become *exit liquidity*.
 
 ```bash
-python -m momentum_desk.cli        # runs now, no install, no credentials (mock data)
+# 1) console demo — no install, no credentials (mock data)
+python -m momentum_desk.cli
+
+# 2) live web dashboard (two terminals)
+python -m venv .venv && . .venv/bin/activate
+pip install fastapi "uvicorn[standard]" pyyaml
+uvicorn momentum_desk.server:app --port 8000      # backend (mock feed by default)
+
+cd web && npm install && npm run dev               # dashboard → http://localhost:5180
 ```
+
+To use real data: copy `config.example.yaml` to `config.yaml`, set
+`data_feed: polygon` and your `polygon_api_key`, and restart the backend.
 
 ---
 
@@ -83,8 +94,8 @@ whole point.
 - [x] Core models, pluggable data adapter, mock feed
 - [x] Scanner with anti-chase flags + scoring
 - [x] Mechanical risk engine (sizing, daily stop, liquidity guard)
-- [ ] Real-time web dashboard (streaming table, sub-second)
-- [ ] Real market data adapter (polygon / finnhub / IBKR scanner)
+- [x] Real-time web dashboard (WebSocket streaming table, React + Vite)
+- [x] Real market data adapter — polygon.io (key-gated; falls back to mock)
 - [ ] IBKR connection — **paper account first** (quotes, then order routing)
 - [ ] Backtester on historical low-float gappers + expectancy report
 - [ ] Trade journal (every signal, decision, and fill logged for review)
