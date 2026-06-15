@@ -128,9 +128,9 @@ class PolygonHistory:
     _BASE = "https://api.polygon.io"
 
     def __init__(self, api_key: str, days: int = 30, min_gap_pct: float = 10.0,
-                 min_price: float = 1.0, max_price: float = 20.0,
+                 min_price: float = 1.0, max_price: float = 30.0,
                  cache_dir: str = "data/cache/polygon", max_per_min: float = 5,
-                 fetch_news: bool = True, max_candidates_per_day: int = 25) -> None:
+                 fetch_news: bool = True, max_candidates_per_day: int = 20) -> None:
         self._n = days
         self._min_gap = min_gap_pct
         self._min_price, self._max_price = min_price, max_price

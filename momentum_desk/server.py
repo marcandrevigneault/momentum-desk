@@ -413,7 +413,7 @@ async def _job_worker(job_id: str, params: dict) -> None:
 @app.post("/api/backtest/launch")
 async def backtest_launch(session: str = "premarket", days: int = 252, target_r: float = 2.0,
                           slippage_pct: float = 0.5, max_hold: int = 60, time_exit_tod: int = 630,
-                          min_rvol: float = 3.0, max_candidates: int = 8) -> dict:
+                          min_rvol: float = 3.0, max_candidates: int = 20) -> dict:
     """Kick off a REAL Massive-data backtest in the background (so a multi-year
     run doesn't time out the request). Concurrent runs allowed up to a cap.
     Poll /api/backtest/job/{id} or the panel via /api/backtest/jobs."""
