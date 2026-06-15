@@ -127,9 +127,12 @@ class _Trade:
     r: float
 
 
-def _strategy_trades(provider: HistoricalProvider, cfg: ScreenConfig,
-                     policy: ExitPolicy, slippage_pct: float) -> list[_Trade]:
-    trades: list[_Trade] = []
+def _all_policy_trades(provider: HistoricalProvider, cfg: ScreenConfig,
+                       trials: list[ExitPolicy], slippage_pct: float) -> dict[str, list[_Trade]]:
+    """Single pass over the data: fetch each day's bars ONCE, find the entry, and
+    run every exit policy on it. Avoids re-fetching minutes per policy — the
+    difference between feasible and not over a multi-year window."""
+    out: dict[str, list[_Trade]] = {p.name: [] for p in trials}
     for day in provider.trading_days():
         for cand in provider.candidates(day):
             if not _passes_gate(cand, cfg):
@@ -143,9 +146,11 @@ def _strategy_trades(provider: HistoricalProvider, cfg: ScreenConfig,
             entry_idx, entry, stop, fwd = ev
             if entry - stop <= 0 or not fwd:
                 continue
-            r, _reason, _held = simulate_exit(entry, stop, bars[: entry_idx + 1], fwd, policy, slippage_pct)
-            trades.append(_Trade(day=day, r=r))
-    return trades
+            prior = bars[: entry_idx + 1]
+            for p in trials:
+                r, _reason, _held = simulate_exit(entry, stop, prior, fwd, p, slippage_pct)
+                out[p.name].append(_Trade(day=day, r=r))
+    return out
 
 
 def _daily(trades: list[_Trade]) -> tuple[list[str], list[float]]:
@@ -297,7 +302,7 @@ def run_gauntlet(
     holdout_frac: float = 0.3, n_boot: int = 2000,
 ) -> GauntletResult:
     trials = trials or POLICIES
-    trades_by_policy = {p.name: _strategy_trades(provider, cfg, p, slippage_pct) for p in trials}
+    trades_by_policy = _all_policy_trades(provider, cfg, trials, slippage_pct)
 
     # candidate = named, else the highest-expectancy trial
     if candidate_policy_name and candidate_policy_name in trades_by_policy:
