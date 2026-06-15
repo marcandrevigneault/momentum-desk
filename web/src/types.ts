@@ -109,6 +109,15 @@ export interface PeriodRow {
   cum_pnl: number;
 }
 
+export interface Job {
+  id: string;
+  status: string;          // running | done | error
+  elapsed: number;
+  progress: number;        // 0..1
+  params: Record<string, number | string>;
+  error?: string;
+}
+
 export interface RunSummary {
   id: string;
   ts: number;

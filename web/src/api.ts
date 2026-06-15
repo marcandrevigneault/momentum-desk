@@ -52,6 +52,15 @@ export async function getRun(id: string) {
   return (await r.json()).result;
 }
 
+export async function deleteRun(id: string) {
+  await fetch(`/api/backtest/runs/${id}`, { method: "DELETE" });
+}
+
+export async function listJobs(): Promise<import("./types").Job[]> {
+  const r = await fetch("/api/backtest/jobs");
+  return (await r.json()).jobs ?? [];
+}
+
 export async function launchRealBacktest(p: BacktestParams) {
   const q = new URLSearchParams({
     session: p.session, days: String(p.days), target_r: String(p.target_r),

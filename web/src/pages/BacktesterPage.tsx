@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { getRun, launchRealBacktest, listRuns, pollJob, runBacktest } from "../api";
-import type { BacktestRun, PeriodRow, RunSummary } from "../types";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+import { deleteRun, getRun, launchRealBacktest, listJobs, listRuns, pollJob, runBacktest } from "../api";
+import type { BacktestRun, Job, PeriodRow, RunSummary } from "../types";
 
 const money = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
@@ -95,37 +93,47 @@ export default function BacktesterPage() {
   const [note, setNote] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [showRuns, setShowRuns] = useState(false);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const openedRef = useRef<Set<string>>(new Set());
 
   const params = { session, days, target_r: targetR, slippage_pct: slippage, max_hold: maxHold, time_exit_tod: timeExit };
 
   const refreshRuns = () => listRuns().then(setRuns).catch(() => {});
   useEffect(() => { refreshRuns(); }, []);
 
+  // poll all jobs (so concurrent runs show in the side panel); auto-open the
+  // result of any job that finishes, and refresh the saved-runs list
+  useEffect(() => {
+    const tick = async () => {
+      let js: Job[] = [];
+      try { js = await listJobs(); } catch { return; }
+      setJobs(js);
+      const justDone = js.find((j) => j.status === "done" && !openedRef.current.has(j.id));
+      if (justDone) {
+        openedRef.current.add(justDone.id);
+        try {
+          const j = await pollJob(justDone.id);
+          if (j.result) setRun(j.result);
+        } catch { /* ignore */ }
+        refreshRuns();
+      }
+    };
+    const t = setInterval(tick, 2000);
+    return () => clearInterval(t);
+  }, []);
+
   const go = async () => {
-    setBusy(true);
     setNote(null);
-    try {
-      if (feed === "synthetic") {
-        setRun(await runBacktest(params));
-        return;
-      }
-      // real data: launch an async job and poll (a multi-year first run is slow)
-      const launched = await launchRealBacktest(params);
-      if (!launched.ok) {
-        setNote(launched.error ?? "could not launch real backtest");
-        return;
-      }
-      for (;;) {
-        await sleep(2000);
-        const j = await pollJob(launched.job_id);
-        if (j.status === "done") { setRun(j.result); break; }
-        if (j.status === "error" || j.status === "unknown") { setNote(j.error ?? "job was lost"); break; }
-        setNote(`fetching real Massive data… ${Math.round(j.elapsed)}s (first multi-year run can take minutes; cached after)`);
-      }
-    } finally {
-      setBusy(false);
-      refreshRuns();
+    if (feed === "synthetic") {
+      setBusy(true);
+      try { setRun(await runBacktest(params)); } finally { setBusy(false); refreshRuns(); }
+      return;
     }
+    // real data: fire-and-forget an async job — non-blocking, so you can launch
+    // several at once. The poller + side panel track them.
+    const launched = await launchRealBacktest(params);
+    if (!launched.ok) setNote(launched.error ?? "could not launch real backtest");
+    else { setNote(null); setJobs(await listJobs().catch(() => jobs)); }
   };
 
   const openRun = async (id: string) => {
@@ -200,6 +208,7 @@ export default function BacktesterPage() {
                   <th className="text-left px-2 py-1">Session</th><th className="text-right px-2 py-1">Days</th>
                   <th className="text-right px-2 py-1">Trades</th><th className="text-right px-2 py-1">R/trade</th>
                   <th className="text-right px-2 py-1">P&L</th><th className="text-right px-2 py-1">MaxDD</th>
+                  <th className="px-2 py-1"></th>
                 </tr>
               </thead>
               <tbody>
@@ -226,6 +235,16 @@ export default function BacktesterPage() {
                       {(r.total_pnl ?? 0) >= 0 ? "+" : ""}{(r.total_pnl ?? 0).toFixed(0)}
                     </td>
                     <td className="px-2 py-1 text-right" style={{ color: "var(--amber)" }}>{(r.max_drawdown_pct ?? 0).toFixed(1)}%</td>
+                    <td className="px-2 py-1 text-right">
+                      {r.id !== "realrun" && (
+                        <button
+                          className="px-1.5"
+                          title="delete this run"
+                          style={{ color: "var(--muted)", background: "transparent", border: "none", cursor: "pointer" }}
+                          onClick={async (e) => { e.stopPropagation(); await deleteRun(r.id); refreshRuns(); }}
+                        >✕</button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -234,7 +253,8 @@ export default function BacktesterPage() {
         </div>
       )}
 
-      <div className="grow min-h-0 overflow-auto p-4">
+      <div className="grow min-h-0 flex">
+       <div className="grow min-h-0 overflow-auto p-4">
         {!run ? (
           <div className="grid place-items-center h-full text-[13px]" style={{ color: "var(--muted)" }}>
             Set parameters and run a backtest to see the equity curve, metrics, and trades.
@@ -315,6 +335,38 @@ export default function BacktesterPage() {
             </div>
           </div>
         )}
+       </div>
+       <aside className="shrink-0 overflow-auto" style={{ width: 264, borderLeft: "1px solid var(--line)", background: "var(--panel)" }}>
+         <div className="section-title px-3 py-2">
+           Running backtests ({jobs.filter((j) => j.status === "running").length})
+         </div>
+         {jobs.length === 0 ? (
+           <div className="px-3 py-2 text-[12px]" style={{ color: "var(--muted)" }}>
+             None running. Pick <b>Data: real — Massive</b> and Run — you can launch several at once.
+           </div>
+         ) : (
+           jobs.map((j) => {
+             const pct = Math.round((j.status === "done" ? 1 : j.progress) * 100);
+             const col = j.status === "running" ? "var(--amber)" : j.status === "error" ? "var(--red)" : "var(--green)";
+             return (
+               <div key={j.id} className="px-3 py-2" style={{ borderBottom: "1px solid var(--line)" }}>
+                 <div className="flex justify-between mono text-[11px]">
+                   <span>{j.params.session} · {j.params.days}d · {j.params.target_r}R</span>
+                   <span style={{ color: col }}>{j.status}</span>
+                 </div>
+                 <div className="mt-1.5" style={{ height: 6, background: "var(--panel-2)", borderRadius: 99, overflow: "hidden" }}>
+                   <div style={{ height: "100%", width: `${pct}%`, background: col, transition: "width .3s" }} />
+                 </div>
+                 <div className="mt-1 mono text-[10px]" style={{ color: "var(--muted)" }}>
+                   {j.status === "running" ? `${pct}% · ${Math.round(j.elapsed)}s`
+                     : j.status === "error" ? (j.error ?? "failed")
+                     : `done · ${Math.round(j.elapsed)}s`}
+                 </div>
+               </div>
+             );
+           })
+         )}
+       </aside>
       </div>
     </div>
   );
