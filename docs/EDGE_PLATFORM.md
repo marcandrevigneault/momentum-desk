@@ -69,6 +69,30 @@ before it is believed.
 | 4 | Strategy Inspector + Edge Report UI | planned |
 | 5 | LightGBM + SHAP contender | planned |
 
+## Validity & known limitations (independent quant audit)
+
+An independent quant-methodologist review (2026-06) stress-tested the platform.
+Fixed: a **premarket lookahead** (move_from_open referenced the future 09:30 open
+— IC collapsed −0.61→−0.095 once anchored point-in-time); an **unenforced
+risk guard** (sub-floor stops now rejected); and a **negative-control gap** —
+added a true zero-drift null, which the gauntlet correctly **rejects** (DSR 42%,
+verdict REJECTED), demonstrating specificity. (The review's claim that the
+gauntlet "blesses noise" was a misread: the default synthetic is rigged *upward*,
+not a null.)
+
+Still open — these affect result **magnitude, not direction**, and should be
+closed before any number is treated as more than an upper bound:
+- **H4 — forward-R denominator confound.** ICs use R = (exit−entry)/(entry−stop);
+  a more-extended entry has a wider stop → smaller R mechanically. Re-measure
+  extension/RVOL ICs against a fixed-% stop and a raw-% outcome.
+- **H1 — DSR null variance** is built from correlated policy Sharpes; rebuild from
+  resampled zero-mean returns so the deflation can actually fail.
+- **M1 — drawdown %** is vs the grown equity peak (flatters the headline); also
+  the equity curve marks only on fills (misses open-position intraperiod DD).
+- **M3 — no halts/LULD** gap-through fills on these illiquid names; the slippage
+  stress varies linear bps, not discontinuous gap risk.
+- **L5 — active universe** uses end-of-day stats to choose names (survivorship).
+
 ## Phase 1 detail
 
 `momentum_desk/edge/features.py` — a `FeatureContext` (everything knowable at the

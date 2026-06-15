@@ -51,3 +51,14 @@ def test_run_gauntlet_end_to_end():
     assert 0.0 <= r.dsr <= 1.0 and 0.0 <= r.psr <= 1.0
     assert not math.isnan(r.sharpe_daily)
     assert r.folds, "expected walk-forward folds"
+
+
+def test_gauntlet_rejects_zero_drift_null():
+    """NEGATIVE CONTROL (specificity): a true zero-drift random walk has no edge
+    by construction — the gauntlet MUST reject it, or its "SURVIVES" verdicts
+    carry no information. (The default synthetic is rigged upward and is NOT a
+    null — see providers.py.)"""
+    null = SyntheticHistory(days=160, session="intraday", null_drift=True)
+    r = run_gauntlet(null, ScreenConfig(session="intraday"), n_boot=400)
+    assert not r.verdict.startswith("SURVIVES"), f"gauntlet blessed a null: {r.verdict}"
+    assert r.dsr < 0.95, f"deflated Sharpe should not clear the bar on noise (got {r.dsr})"

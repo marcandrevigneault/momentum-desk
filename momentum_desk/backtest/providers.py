@@ -37,11 +37,17 @@ class SyntheticHistory:
 
     name = "synthetic"
 
-    def __init__(self, days: int = 40, seed: int = 11, session: str = "regular") -> None:
+    def __init__(self, days: int = 40, seed: int = 11, session: str = "regular",
+                 null_drift: bool = False) -> None:
         self._rng = random.Random(seed)
         self._days = self._make_days(days)
         self._pool = ["GNSX", "BHAT", "ATNF", "CEAD", "VRPX", "TOPS", "MULN", "NAOV", "GROM", "COSM"]
         self._session = session   # "regular" (09:30 on) | "premarket" (04:00 → into the open)
+        # NEGATIVE CONTROL: zero-drift symmetric random walk — a true null with no
+        # edge by construction. Any evaluator worth trusting must REJECT it. (The
+        # default generator deliberately gives winners upward drift to exercise
+        # the engine; that path's P&L is not evidence of anything.)
+        self._null_drift = null_drift
         self._cand_cache: dict[str, list[DayCandidate]] = {}
         self._min_cache: dict[tuple[str, str], list[MinuteBar]] = {}
 
@@ -90,7 +96,9 @@ class SyntheticHistory:
         # intraday-session names need bigger post-open swings to trip a HOD break,
         # so winners drift harder there (still ~half losers).
         roll = rng.random()
-        if self._session == "intraday":
+        if self._null_drift:
+            drift = 0.0                       # true null: no edge by construction
+        elif self._session == "intraday":
             drift = rng.uniform(0.002, 0.006) if roll < 0.45 else -rng.uniform(0.001, 0.004)
         else:
             drift = rng.uniform(0.0008, 0.004) if roll < 0.42 else -rng.uniform(0.0005, 0.0035)

@@ -74,9 +74,13 @@ class RiskEngine:
             reasons.append("stop must be below entry (long-only sizing)")
             return PositionPlan(snap.symbol, Verdict.REJECTED, 0, entry, stop, 0.0, reasons)
         if stop_dist_pct < c.min_stop_distance_pct:
+            # ENFORCED (not advisory): a sub-floor stop ⇒ enormous share count and
+            # inflated R-multiples — exactly the "hope" trade this guard exists to
+            # refuse. Reject rather than silently size it.
             reasons.append(
                 f"stop too tight ({stop_dist_pct:.1f}% < {c.min_stop_distance_pct}%) — noise will stop you out"
             )
+            return PositionPlan(snap.symbol, Verdict.REJECTED, 0, entry, stop, 0.0, reasons)
 
         risk_dollars = c.account_equity * c.max_risk_per_trade_pct / 100.0
         shares = int(risk_dollars / stop_dist)
