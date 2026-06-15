@@ -23,6 +23,11 @@ export async function getBars(symbol: string, tf: string): Promise<import("./typ
   return (await r.json()).candles ?? [];
 }
 
+export async function getEdge(): Promise<import("./types").EdgeScreen> {
+  const r = await fetch("/api/edge");
+  return r.json();
+}
+
 export async function getTrades(): Promise<Trade[]> {
   const r = await fetch("/api/trades");
   return (await r.json()).trades ?? [];

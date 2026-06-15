@@ -142,6 +142,39 @@ export interface RunSummary {
   time_exit_tod?: number;
 }
 
+export interface EdgeDecile {
+  lo: number;
+  hi: number;
+  n: number;
+  mean_fwd_r: number;
+}
+
+export interface EdgeFeature {
+  name: string;
+  kind: string;        // "static" | "dynamic"
+  desc: string;
+  n: number;
+  ic: number;          // Spearman rank correlation with forward R
+  lift_spread: number; // top-decile mean R minus bottom-decile mean R
+  deciles: EdgeDecile[];
+}
+
+export interface EdgeSessionScreen {
+  session: string;
+  n_events: number;
+  baseline_fwd_r: number;
+  win_rate: number;
+  features: EdgeFeature[];
+}
+
+export interface EdgeScreen {
+  generated: string | null;
+  days: number | null;
+  data: string | null;
+  source: string;     // "live" | "snapshot"
+  sessions: Record<string, EdgeSessionScreen>;
+}
+
 export interface BacktestRun {
   synthetic: boolean;
   session: string;
