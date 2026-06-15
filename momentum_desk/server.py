@@ -222,6 +222,7 @@ async def backtest(session: str = "premarket", days: int = 60, target_r: float =
 
     from .backtest import Backtester, SyntheticHistory
     from .backtest.engine import BacktestConfig
+    from .backtest.review import breakdowns
 
     session = "premarket" if session == "premarket" else "regular"
     days = max(5, min(int(days), 120))
@@ -234,6 +235,7 @@ async def backtest(session: str = "premarket", days: int = 60, target_r: float =
         return Backtester(prov, bt=bt).run()
 
     res = await asyncio.to_thread(run)
+    bd = breakdowns(res.trades)
     return {
         "synthetic": True,
         "session": session,
@@ -241,7 +243,24 @@ async def backtest(session: str = "premarket", days: int = 60, target_r: float =
         "metrics": asdict(res.metrics),
         "equity_curve": res.equity_curve,
         "trades": [asdict(t) for t in res.trades],
+        "monthly": bd["monthly"],
+        "yearly": bd["yearly"],
     }
+
+
+@app.get("/api/realrun")
+async def realrun() -> dict:
+    """Serve the latest local multi-year real-data run (scripts/realrun.py
+    writes data/realrun.json). Absent on the hosted app — real runs are local."""
+    import json
+
+    p = Path("data/realrun.json")
+    if not p.exists():
+        return {"available": False}
+    try:
+        return {"available": True, **json.loads(p.read_text())}
+    except Exception:  # noqa: BLE001
+        return {"available": False}
 
 
 @app.post("/api/trade/open/{symbol}")

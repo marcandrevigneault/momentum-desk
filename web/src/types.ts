@@ -100,6 +100,15 @@ export interface BacktestTrade {
   pnl: number;
 }
 
+export interface PeriodRow {
+  period: string;
+  trades: number;
+  wins: number;
+  win_rate: number;
+  pnl: number;
+  cum_pnl: number;
+}
+
 export interface BacktestRun {
   synthetic: boolean;
   session: string;
@@ -107,4 +116,7 @@ export interface BacktestRun {
   metrics: BacktestMetrics;
   equity_curve: number[];
   trades: BacktestTrade[];
+  monthly?: PeriodRow[];
+  yearly?: PeriodRow[];
+  available?: boolean;        // for the real-run loader
 }

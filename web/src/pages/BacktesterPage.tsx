@@ -1,9 +1,9 @@
 import { useState } from "react";
 import {
-  CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { runBacktest } from "../api";
-import type { BacktestRun } from "../types";
+import { getRealRun, runBacktest } from "../api";
+import type { BacktestRun, PeriodRow } from "../types";
 
 const money = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
@@ -28,6 +28,58 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const inputCls = "mono text-[13px] rounded-md px-2 py-1.5";
 const inputStyle = { background: "var(--panel-2)", border: "1px solid var(--line)", color: "var(--text)" };
 
+function PeriodTable({ title, rows }: { title: string; rows: PeriodRow[] }) {
+  return (
+    <div className="rounded-lg" style={{ background: "var(--panel)", border: "1px solid var(--line)", flex: 1, minWidth: 0 }}>
+      <div className="section-title px-3 py-2">{title} ({rows.length})</div>
+      <div className="overflow-auto" style={{ maxHeight: 220 }}>
+        <table className="w-full border-collapse mono text-[12px]">
+          <thead className="sticky top-0" style={{ background: "var(--panel)", color: "var(--muted)" }}>
+            <tr style={{ borderBottom: "1px solid var(--line)" }}>
+              <th className="text-left px-3 py-1.5">Period</th><th className="text-right px-3 py-1.5">Trades</th>
+              <th className="text-right px-3 py-1.5">Win%</th><th className="text-right px-3 py-1.5">P&L</th>
+              <th className="text-right px-3 py-1.5">Cum</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((p) => (
+              <tr key={p.period} style={{ borderBottom: "1px solid var(--line)" }}>
+                <td className="px-3 py-1.5">{p.period}</td>
+                <td className="px-3 py-1.5 text-right">{p.trades}</td>
+                <td className="px-3 py-1.5 text-right">{p.win_rate.toFixed(0)}%</td>
+                <td className="px-3 py-1.5 text-right font-bold" style={{ color: p.pnl >= 0 ? "var(--green)" : "var(--red)" }}>
+                  {p.pnl >= 0 ? "+" : ""}{p.pnl.toFixed(0)}
+                </td>
+                <td className="px-3 py-1.5 text-right" style={{ color: "var(--muted)" }}>{p.cum_pnl.toFixed(0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function MonthlyBars({ rows }: { rows: PeriodRow[] }) {
+  return (
+    <div className="rounded-lg p-3" style={{ background: "var(--panel)", border: "1px solid var(--line)", height: 200 }}>
+      <div className="section-title mb-1">Monthly P&L</div>
+      <ResponsiveContainer width="100%" height="86%">
+        <BarChart data={rows} margin={{ top: 6, right: 12, bottom: 0, left: 8 }}>
+          <CartesianGrid stroke="#232b3a" strokeDasharray="2 4" />
+          <XAxis dataKey="period" stroke="#8b949e" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }} interval="preserveStartEnd" />
+          <YAxis stroke="#8b949e" tick={{ fontSize: 10, fontFamily: "JetBrains Mono" }} width={56} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+          <Tooltip contentStyle={{ background: "#161b22", border: "1px solid #283040", fontFamily: "JetBrains Mono", fontSize: 11 }}
+            formatter={(v: number) => [`$${v.toFixed(0)}`, "P&L"]} />
+          <Bar dataKey="pnl">
+            {rows.map((p) => <Cell key={p.period} fill={p.pnl >= 0 ? "#34d399" : "#f87171"} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export default function BacktesterPage() {
   const [session, setSession] = useState("premarket");
   const [days, setDays] = useState(60);
@@ -37,11 +89,25 @@ export default function BacktesterPage() {
   const [timeExit, setTimeExit] = useState(630);   // 0=off, 600=10:00, 630=10:30
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState<BacktestRun | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   const go = async () => {
     setBusy(true);
+    setNote(null);
     try {
       setRun(await runBacktest({ session, days, target_r: targetR, slippage_pct: slippage, max_hold: maxHold, time_exit_tod: timeExit }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadReal = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await getRealRun();
+      if (r.available) setRun(r);
+      else setNote("No real run found yet — run scripts/realrun.py with your Massive key (it writes data/realrun.json).");
     } finally {
       setBusy(false);
     }
@@ -81,6 +147,8 @@ export default function BacktesterPage() {
           </select>
         </Field>
         <button className="btn btn-buy" disabled={busy} onClick={go}>{busy ? "Running…" : "▶ Run backtest"}</button>
+        <button className="btn" disabled={busy} onClick={loadReal} title="Load the latest local multi-year real-data run">↑ Load real run</button>
+        {note && <span className="mono text-[11px]" style={{ color: "var(--amber)" }}>{note}</span>}
       </div>
 
       <div className="grow min-h-0 overflow-auto p-4">
@@ -122,6 +190,14 @@ export default function BacktesterPage() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
+
+            {!!run.monthly?.length && <MonthlyBars rows={run.monthly} />}
+            {(!!run.monthly?.length || !!run.yearly?.length) && (
+              <div className="flex flex-wrap gap-4">
+                {!!run.yearly?.length && <PeriodTable title="Year by year" rows={run.yearly} />}
+                {!!run.monthly?.length && <PeriodTable title="Month by month" rows={run.monthly} />}
+              </div>
+            )}
 
             <div className="rounded-lg" style={{ background: "var(--panel)", border: "1px solid var(--line)" }}>
               <div className="section-title px-3 py-2">Trades ({run.trades.length})</div>
