@@ -54,6 +54,31 @@ body {
   white-space: nowrap;
 }
 
+.btn {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-buy {
+  background: var(--green);
+  border-color: var(--green);
+  color: #04130c;
+}
+.btn-sell {
+  background: var(--red);
+  border-color: var(--red);
+  color: #1a0606;
+}
+
 ::-webkit-scrollbar {
   width: 9px;
   height: 9px;

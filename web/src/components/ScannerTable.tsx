@@ -13,14 +13,17 @@ function Flag({ flag }: { flag: string }) {
   return <span className="flag" style={{ background: s.bg, color: s.fg }}>{s.label}</span>;
 }
 
-function num(v: number, d = 2) {
-  return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
-}
-
+const num = (v: number, d = 2) => v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const TH = "text-left font-semibold text-[11px] uppercase tracking-wider px-3 py-2";
-const tdBase = "px-3 py-2.5 align-middle";
+const tdBase = "px-3 py-2 align-middle";
 
-export default function ScannerTable({ signals }: { signals: Signal[] }) {
+export default function ScannerTable({
+  signals, selected, onSelect,
+}: {
+  signals: Signal[];
+  selected: string | null;
+  onSelect: (s: string) => void;
+}) {
   if (signals.length === 0) {
     return (
       <div className="grid place-items-center h-full text-[13px]" style={{ color: "var(--muted)" }}>
@@ -38,70 +41,47 @@ export default function ScannerTable({ signals }: { signals: Signal[] }) {
             <th className={`${TH} text-right`}>Gap %</th>
             <th className={`${TH} text-right`}>RVOL</th>
             <th className={`${TH} text-right`}>+VWAP</th>
-            <th className={`${TH} text-right`}>Float M</th>
             <th className={`${TH} text-right`}>Score</th>
             <th className={TH}>Catalyst / flags</th>
-            <th className={`${TH} text-right`}>Risk plan</th>
           </tr>
         </thead>
         <tbody className="mono">
           {signals.map((s) => {
             const ext = s.extension_above_vwap_pct;
+            const isSel = selected === s.symbol;
             return (
               <tr
                 key={s.symbol}
+                onClick={() => onSelect(s.symbol)}
+                className="cursor-pointer"
                 style={{
                   borderBottom: "1px solid var(--line)",
                   opacity: s.actionable ? 1 : 0.62,
+                  background: isSel ? "var(--panel-2)" : undefined,
+                  boxShadow: isSel ? "inset 2px 0 0 var(--blue)" : undefined,
                 }}
               >
                 <td className={`${tdBase} font-bold`} style={{ fontFamily: "Inter" }}>
-                  <span style={{ color: s.actionable ? "var(--green)" : "var(--muted)" }}>
-                    {s.actionable ? "●" : "○"}
-                  </span>{" "}
+                  <span style={{ color: s.actionable ? "var(--green)" : "var(--muted)" }}>{s.actionable ? "●" : "○"}</span>{" "}
                   {s.symbol}
+                  {s.held && <span className="flag ml-1.5" style={{ background: "rgba(96,165,250,.15)", color: "var(--blue)" }}>HELD</span>}
                 </td>
                 <td className={`${tdBase} text-right`}>${num(s.last)}</td>
-                <td className={`${tdBase} text-right`} style={{ color: "var(--green)" }}>
-                  +{num(s.gap_pct, 1)}
-                </td>
+                <td className={`${tdBase} text-right`} style={{ color: "var(--green)" }}>+{num(s.gap_pct, 1)}</td>
                 <td className={`${tdBase} text-right`}>{num(s.relative_volume, 1)}×</td>
-                <td
-                  className={`${tdBase} text-right`}
-                  style={{ color: ext > 8 ? "var(--red)" : ext > 4 ? "var(--amber)" : "var(--muted)" }}
-                >
+                <td className={`${tdBase} text-right`} style={{ color: ext > 8 ? "var(--red)" : ext > 4 ? "var(--amber)" : "var(--muted)" }}>
                   +{num(ext, 1)}%
                 </td>
-                <td className={`${tdBase} text-right`} style={{ color: "var(--muted)" }}>
-                  {s.float_millions == null ? "—" : num(s.float_millions, 1)}
-                </td>
-                <td className={`${tdBase} text-right font-bold`} style={{ color: "var(--blue)" }}>
-                  {num(s.score, 1)}
-                </td>
+                <td className={`${tdBase} text-right font-bold`} style={{ color: "var(--blue)" }}>{num(s.score, 1)}</td>
                 <td className={tdBase}>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {s.has_news && (
-                      <span
-                        className="truncate max-w-[260px] text-[12px]"
-                        style={{ fontFamily: "Inter", color: "var(--text)" }}
-                        title={s.news_headline}
-                      >
+                      <span className="truncate max-w-[220px] text-[12px]" style={{ fontFamily: "Inter", color: "var(--text)" }} title={s.news_headline}>
                         {s.news_headline || "news"}
                       </span>
                     )}
                     {s.flags.map((f) => <Flag key={f} flag={f} />)}
                   </div>
-                </td>
-                <td className={`${tdBase} text-right text-[12px]`}>
-                  {s.plan && s.plan.ok ? (
-                    <span title={s.plan.reasons.join("; ")}>
-                      <b>{s.plan.shares.toLocaleString()}</b> sh
-                      <span style={{ color: "var(--muted)" }}> · stop ${num(s.plan.stop)}</span>
-                      <span style={{ color: "var(--muted)" }}> · −${num(s.plan.risk_dollars, 0)}</span>
-                    </span>
-                  ) : (
-                    <span style={{ color: "var(--muted)" }}>—</span>
-                  )}
                 </td>
               </tr>
             );

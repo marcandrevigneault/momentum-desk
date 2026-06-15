@@ -1,5 +1,13 @@
-import { useScanner, type ConnState } from "./useScanner";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getTrades } from "./api";
+import DetailPanel from "./components/DetailPanel";
+import Positions from "./components/Positions";
 import ScannerTable from "./components/ScannerTable";
+import Trades from "./components/Trades";
+import type { Point, Trade } from "./types";
+import { useScanner, type ConnState } from "./useScanner";
+
+const HIST_CAP = 240;
 
 function ConnBadge({ state, feed }: { state: ConnState; feed?: string }) {
   const map = {
@@ -15,80 +23,100 @@ function ConnBadge({ state, feed }: { state: ConnState; feed?: string }) {
   );
 }
 
-function money(v: number) {
-  const s = v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-  return s;
+const money = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+function Kpi({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <span className="mono text-[12px]" style={{ color: "var(--muted)" }}>
+      {label} <b style={{ color: color ?? "var(--text)" }}>{value}</b>
+    </span>
+  );
 }
 
 export default function App() {
   const { data, state } = useScanner();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const histories = useRef<Map<string, Point[]>>(new Map());
+
+  // accumulate a live price history per symbol from each streamed tick
+  if (data) {
+    const seen = [...data.signals.map((s) => ({ sym: s.symbol, last: s.last, vwap: s.last })),
+                  ...data.positions.map((p) => ({ sym: p.symbol, last: p.last, vwap: p.last }))];
+    for (const { sym, last } of seen) {
+      const buf = histories.current.get(sym) ?? [];
+      const t = data.ts;
+      if (buf.length === 0 || buf[buf.length - 1].t !== t) {
+        buf.push({ t, last, vwap: last });
+        if (buf.length > HIST_CAP) buf.shift();
+        histories.current.set(sym, buf);
+      }
+    }
+  }
+
+  // refetch the closed-trades log whenever the closed count changes
+  const closedCount = data?.account.closed_trades ?? 0;
+  useEffect(() => {
+    getTrades().then(setTrades);
+  }, [closedCount]);
+
   const acct = data?.account;
-  const pnl = acct?.realized_pnl_today ?? 0;
+  const selSignal = useMemo(() => data?.signals.find((s) => s.symbol === selected) ?? null, [data, selected]);
+  const selPos = useMemo(() => data?.positions.find((p) => p.symbol === selected) ?? null, [data, selected]);
+  const selPoints = selected ? histories.current.get(selected) ?? [] : [];
 
   return (
     <div className="h-full flex flex-col">
-      <header
-        className="flex items-center gap-4 px-5 h-14 shrink-0"
-        style={{ background: "var(--panel)", borderBottom: "1px solid var(--line)" }}
-      >
+      <header className="flex items-center gap-4 px-5 h-14 shrink-0" style={{ background: "var(--panel)", borderBottom: "1px solid var(--line)" }}>
         <h1 className="m-0 text-[17px] font-bold tracking-tight">
-          Momentum&nbsp;Desk
-          <span className="mono text-[11px] font-medium ml-2" style={{ color: "var(--muted)" }}>
-            low-float scanner
-          </span>
+          Momentum&nbsp;Desk<span className="mono text-[11px] font-medium ml-2" style={{ color: "var(--muted)" }}>cockpit</span>
         </h1>
-
         <ConnBadge state={state} feed={data?.feed} />
         {data && (
-          <span
-            className="badge"
-            style={{
-              color: data.mode === "live" ? "var(--red)" : "var(--green)",
-              borderColor: data.mode === "live" ? "var(--red)" : "var(--green)",
-            }}
-          >
+          <span className="badge" style={{ color: data.mode === "live" ? "var(--red)" : "var(--green)", borderColor: data.mode === "live" ? "var(--red)" : "var(--green)" }}>
             {data.mode}
           </span>
         )}
-
-        <div className="ml-auto flex items-center gap-5 mono text-[12px]">
+        <div className="ml-auto flex items-center gap-5">
           {acct && (
             <>
-              <span style={{ color: "var(--muted)" }}>
-                equity <b style={{ color: "var(--text)" }}>{money(acct.equity)}</b>
-              </span>
-              <span style={{ color: "var(--muted)" }}>
-                day P&L{" "}
-                <b style={{ color: pnl < 0 ? "var(--red)" : "var(--green)" }}>
-                  {pnl >= 0 ? "+" : ""}{money(pnl)}
-                </b>
-              </span>
-              {acct.daily_loss_limit_hit && (
-                <span className="badge" style={{ color: "var(--red)", borderColor: "var(--red)" }}>
-                  ⛔ daily stop hit
-                </span>
-              )}
+              <Kpi label="equity" value={money(acct.equity)} />
+              <Kpi label="day P&L" value={`${acct.day_pnl >= 0 ? "+" : ""}${money(acct.day_pnl)}`} color={acct.day_pnl < 0 ? "var(--red)" : "var(--green)"} />
+              <Kpi label="unreal" value={`${acct.unrealized_pnl >= 0 ? "+" : ""}${money(acct.unrealized_pnl)}`} color={acct.unrealized_pnl < 0 ? "var(--red)" : "var(--green)"} />
+              <Kpi label="open" value={String(acct.open_positions)} />
+              {acct.daily_loss_limit_hit && <span className="badge" style={{ color: "var(--red)", borderColor: "var(--red)" }}>⛔ daily stop</span>}
             </>
           )}
-          <span style={{ color: "var(--muted)" }}>
-            {data ? `${data.count} candidates` : "—"}
-          </span>
         </div>
       </header>
 
-      <main className="grow min-h-0" style={{ background: "var(--bg)" }}>
-        <ScannerTable signals={data?.signals ?? []} />
+      <main className="grow min-h-0 flex" style={{ background: "var(--bg)" }}>
+        {/* left: scanner */}
+        <section className="flex flex-col min-w-0" style={{ flex: "1 1 52%", borderRight: "1px solid var(--line)" }}>
+          <div className="section-title px-3 py-1.5 shrink-0">Scanner{data ? ` · ${data.count} candidates` : ""}</div>
+          <div className="grow min-h-0">
+            <ScannerTable signals={data?.signals ?? []} selected={selected} onSelect={setSelected} />
+          </div>
+        </section>
+
+        {/* right: chart + positions + trades */}
+        <section className="flex flex-col min-w-0" style={{ flex: "1 1 48%" }}>
+          <div style={{ height: "44%", borderBottom: "1px solid var(--line)" }}>
+            <DetailPanel signal={selSignal} position={selPos} points={selPoints} />
+          </div>
+          <div style={{ height: "28%", borderBottom: "1px solid var(--line)" }}>
+            <Positions positions={data?.positions ?? []} onSelect={setSelected} selected={selected} />
+          </div>
+          <div style={{ height: "28%" }}>
+            <Trades trades={trades} />
+          </div>
+        </section>
       </main>
 
-      <footer
-        className="shrink-0 px-5 py-2 text-[11px] mono flex items-center gap-4"
-        style={{ background: "var(--panel)", borderTop: "1px solid var(--line)", color: "var(--muted)" }}
-      >
+      <footer className="shrink-0 px-5 py-2 text-[11px] mono flex items-center gap-4" style={{ background: "var(--panel)", borderTop: "1px solid var(--line)", color: "var(--muted)" }}>
         <span>● actionable</span>
-        <span style={{ opacity: 0.62 }}>○ found but flagged — don't chase</span>
-        <span className="ml-auto">
-          Paper-first. Not advice. Mock data unless a real feed is configured.
-        </span>
+        <span style={{ opacity: 0.62 }}>○ flagged — don't chase</span>
+        <span className="ml-auto">Paper-first · simulated broker · mock data unless a real feed is configured. Not advice.</span>
       </footer>
     </div>
   );
