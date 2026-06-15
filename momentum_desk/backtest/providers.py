@@ -138,6 +138,7 @@ class PolygonHistory:
         self._max_candidates = max_candidates_per_day
         self._grouped: dict[str, dict] = {}   # day -> {sym: bar}
         self._avg_cache: dict[str, float] = {}
+        self._avg_cache_by_sym: dict[str, list[tuple[str, float]]] = {}  # sym -> [(date, volume)]
         # cached + throttled HTTP so sweeps replay from disk and we never get
         # 429'd off the free tier (see backtest/http.py)
         self.client = CachedClient(self._BASE, api_key, cache_dir=cache_dir, max_per_min=max_per_min)
@@ -190,22 +191,47 @@ class PolygonHistory:
             has_news, headline = self._premarket_news(sym, day) if self._fetch_news else (False, "")
             out.append(DayCandidate(
                 symbol=sym, day=day, prev_close=prev_close, day_open=day_open,
-                avg_volume_20d=vol,   # prior-day volume proxy; refine w/ 20d aggs
+                avg_volume_20d=self._avg_vol_20d(sym, day, vol),   # true trailing-20d avg
                 float_shares=None,    # shares-outstanding (≈float) lookup omitted in batch backtest
                 has_news=has_news, news_headline=headline,
             ))
         return out
 
+    def _avg_vol_20d(self, sym: str, day: str, fallback: float) -> float:
+        """True trailing-20-session average volume — one cached daily-aggs call
+        per symbol for the whole run, vs the noisy prior-day proxy."""
+        if sym not in self._avg_cache_by_sym:
+            days = self.trading_days()
+            start = (dt.date.fromisoformat(days[0]) - dt.timedelta(days=45)).isoformat()
+            series: list[tuple[str, float]] = []
+            try:
+                r = self._get(f"/v2/aggs/ticker/{sym}/range/1/day/{start}/{days[-1]}",
+                              {"adjusted": "true", "sort": "asc", "limit": 5000})
+                for b in r.get("results") or []:
+                    bd = dt.datetime.fromtimestamp(b["t"] / 1000, tz=dt.UTC).astimezone(_ET).date().isoformat()
+                    series.append((bd, b.get("v", 0)))
+            except Exception:  # noqa: BLE001
+                series = []
+            self._avg_cache_by_sym[sym] = series
+        prior = [v for (bd, v) in self._avg_cache_by_sym[sym] if bd < day]
+        if len(prior) >= 5:
+            window = prior[-20:]
+            return sum(window) / len(window)
+        return fallback
+
     def _premarket_news(self, sym: str, day: str) -> tuple[bool, str]:
-        """A catalyst counts only if published before that day's 09:30 ET open
-        (point-in-time — no peeking at intraday news)."""
+        """A catalyst counts if published in the ~20 h before the 09:30 ET open
+        — captures the classic prior-afternoon/evening press release plus
+        overnight/pre-market news, but never anything after the open (no
+        lookahead)."""
         y, m, d = (int(x) for x in day.split("-"))
         open_utc = dt.datetime(y, m, d, 9, 30, tzinfo=_ET).astimezone(dt.UTC)
+        gte = open_utc - dt.timedelta(hours=20)
         try:
             r = self._get("/v2/reference/news", {
                 "ticker": sym, "order": "desc", "limit": 1,
                 "published_utc.lte": open_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "published_utc.gte": f"{day}T00:00:00Z",
+                "published_utc.gte": gte.strftime("%Y-%m-%dT%H:%M:%SZ"),
             })
             res = r.get("results") or []
             if res:
