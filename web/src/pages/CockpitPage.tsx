@@ -72,6 +72,12 @@ export default function CockpitPage() {
             {data.mode}
           </span>
         )}
+        {data && data.feed !== "mock" && (
+          <span className="badge" style={{ color: "var(--amber)", borderColor: "var(--amber)" }}
+                title="Massive plan is 15-min delayed — observation / paper only, NOT live-tradeable. Real-time needs the $189 plan.">
+            ⏱ 15-min delayed · observe only
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-5">
           {acct && (
             <>

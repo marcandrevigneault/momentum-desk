@@ -49,11 +49,13 @@ def load_config(path: str = "config.yaml") -> AppConfig:
             print(f"[config] could not read {path} ({e}); using defaults")
 
     cfg = AppConfig(
-        mode=raw.get("mode", "paper"),
-        data_feed=raw.get("data_feed", "mock"),
+        # env overrides win, so the hosted app (which has no config.yaml) can be
+        # switched to the real feed with a DATA_FEED secret
+        mode=os.environ.get("MODE") or raw.get("mode", "paper"),
+        data_feed=os.environ.get("DATA_FEED") or raw.get("data_feed", "mock"),
         polygon_api_key=raw.get("polygon_api_key", "") or os.environ.get("POLYGON_API_KEY", ""),
         finnhub_api_key=raw.get("finnhub_api_key", "") or os.environ.get("FINNHUB_API_KEY", ""),
-        scan_interval_s=float(raw.get("scan_interval_s", 2.0)),
+        scan_interval_s=float(os.environ.get("SCAN_INTERVAL_S") or raw.get("scan_interval_s", 2.0)),
     )
     if isinstance(raw.get("ibkr"), dict):
         cfg.ibkr = _coerce(IBKRConfig, raw["ibkr"])
