@@ -45,6 +45,12 @@ class BacktestConfig:
     # Momentum runners often fade ~10:00–10:30 ET; capping the hold there is a
     # rule worth measuring (sweep it). 600 = 10:00, 630 = 10:30.
     time_exit_tod: int = 0
+    # --- intraday / post-open momentum (session="intraday") ---
+    # Catches names that open flat/down then run on volume — entry on a new
+    # high-of-day break after the open, with a momentum + RVOL confirmation.
+    intraday_min_move_pct: float = 5.0    # min % up from the open at the HOD break
+                                          # (kept modest so it doesn't fight the anti-chase guard)
+    intraday_entry_cutoff_tod: int = 660  # no new entries after this ET min (660 = 11:00)
 
 
 class Backtester:
@@ -82,7 +88,8 @@ class Backtester:
                     break  # done trading this day
                 if not self._passes_open_gate(cand):
                     continue
-                sim = self._simulate_premarket if self.bt.session == "premarket" else self._simulate
+                sim = {"premarket": self._simulate_premarket,
+                       "intraday": self._simulate_intraday}.get(self.bt.session, self._simulate)
                 trade = sim(cand, risk)
                 if trade is None:
                     skipped += 1
@@ -104,7 +111,9 @@ class Backtester:
         s = self.scan
         if not (s.min_price <= c.day_open <= s.max_price):
             return False
-        if c.gap_pct < s.min_gap_pct:
+        # intraday mode trades names that opened flat/down then ran — so it does
+        # NOT require an open gap; the universe + the HOD-break RVOL check select.
+        if self.bt.session != "intraday" and c.gap_pct < s.min_gap_pct:
             return False
         if s.require_news and not c.has_news:
             return False
@@ -256,6 +265,80 @@ class Backtester:
                 exit_t, exit_px, reason = b.t, b.c * (1 - slip), "time-cap"
                 break
             exit_t, exit_px = b.t, b.c * (1 - slip)   # carry a time-exit fallback
+
+        gross = (exit_px - entry) * plan.shares
+        commission = 2.0 * max(self.bt.commission_min, plan.shares * self.bt.commission_per_share)
+        pnl = gross - commission
+        r = pnl / plan.risk_dollars if plan.risk_dollars > 0 else 0.0
+        return Trade(
+            symbol=c.symbol, day=c.day, entry_t=eb.t, entry=round(entry, 4), stop=round(stop, 4),
+            target=round(target, 4), shares=plan.shares, exit_t=exit_t,
+            exit=round(exit_px, 4), pnl=round(pnl, 2), r_multiple=round(r, 2), exit_reason=reason,
+        )
+
+    # ---------- one intraday / post-open momentum trade ----------
+    def _simulate_intraday(self, c: DayCandidate, risk: RiskEngine) -> Trade | None:
+        """Enter on a new high-of-day break AFTER the open — catches names that
+        opened flat/down and ran on volume (no gap required). Point-in-time:
+        only bars up to the breakout decide entry."""
+        bars = self.provider.minutes(c.symbol, c.day)
+        reg = [b for b in bars if b.tod >= MARKET_OPEN_TOD]   # regular session only
+        base_n = self.bt.opening_range_minutes
+        if len(reg) <= base_n + 2:
+            return None
+        open_px = reg[0].o
+        slip = self.bt.slippage_pct / 100.0
+        if open_px <= 0:
+            return None
+
+        hod = max(b.h for b in reg[:base_n])     # high of the opening base
+        entry_idx, entry, stop = None, 0.0, 0.0
+        for i in range(base_n, len(reg)):
+            b = reg[i]
+            if b.tod >= self.bt.intraday_entry_cutoff_tod:
+                break
+            if b.h >= hod and hod > 0:           # new high-of-day → momentum break
+                move = 100.0 * (hod - open_px) / open_px
+                rvol = b.cum_volume / c.avg_volume_20d if c.avg_volume_20d > 0 else 0.0
+                ext = 100.0 * (hod - b.vwap) / b.vwap if b.vwap > 0 else 0.0
+                chasing = self.bt.use_anti_chase and ext > self.scan.max_extension_above_vwap_pct
+                if move >= self.bt.intraday_min_move_pct and rvol >= self.scan.min_relative_volume and not chasing:
+                    recent_low = min(x.l for x in reg[max(0, i - base_n): i + 1])
+                    entry = hod * (1 + slip)
+                    stop = recent_low * (1 - self.bt.stop_buffer_pct / 100.0)
+                    entry_idx = i
+                    break
+            hod = max(hod, b.h)
+        if entry_idx is None or stop <= 0 or stop >= entry:
+            return None
+
+        eb = reg[entry_idx]
+        snap = Snapshot(
+            symbol=c.symbol, last=entry, prev_close=c.prev_close, day_open=c.day_open,
+            vwap=eb.vwap, cum_volume=eb.cum_volume, avg_volume_20d=c.avg_volume_20d,
+            float_shares=c.float_shares,
+        )
+        plan = risk.plan(snap, entry=entry, stop=stop)
+        if not plan.ok or plan.shares <= 0:
+            return None
+
+        target = entry + self.bt.target_r * (entry - stop)
+        deadline_tod = self.bt.intraday_entry_cutoff_tod + self.bt.max_hold_minutes
+        exit_t, exit_px, reason = eb.t, eb.c, "time"
+        for b in reg[entry_idx + 1:]:
+            if b.tod > deadline_tod:
+                exit_t, exit_px, reason = b.t, b.c * (1 - slip), "time"
+                break
+            if b.l <= stop:
+                exit_t, exit_px, reason = b.t, stop * (1 - slip), "stop"
+                break
+            if b.h >= target:
+                exit_t, exit_px, reason = b.t, target * (1 - slip), "target"
+                break
+            if self.bt.time_exit_tod and b.tod >= self.bt.time_exit_tod:
+                exit_t, exit_px, reason = b.t, b.c * (1 - slip), "time-cap"
+                break
+            exit_t, exit_px = b.t, b.c * (1 - slip)
 
         gross = (exit_px - entry) * plan.shares
         commission = 2.0 * max(self.bt.commission_min, plan.shares * self.bt.commission_per_share)

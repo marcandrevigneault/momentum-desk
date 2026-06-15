@@ -47,6 +47,15 @@ def test_time_of_day_exit_caps_the_hold():
     assert any(t.exit_reason == "time-cap" for t in res.trades)  # the cap actually fires
 
 
+def test_intraday_session_enters_after_the_open_on_hod_break():
+    res = Backtester(SyntheticHistory(days=40, session="intraday"),
+                     bt=BacktestConfig(session="intraday", intraday_min_move_pct=2.0)).run()
+    assert res.metrics.trades > 0
+    # intraday entries are after the 09:30 open: bars start at tod 570, so
+    # entry_t (minutes from the first bar) is >= the opening-range base
+    assert all(t.entry_t >= 5 for t in res.trades)
+
+
 def test_regular_session_unaffected_by_premarket_changes():
     # the default (regular) path still produces trades — no regression
     res = Backtester(SyntheticHistory(days=40)).run()

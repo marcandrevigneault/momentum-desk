@@ -228,7 +228,7 @@ async def backtest(session: str = "premarket", days: int = 60, target_r: float =
     from .backtest.engine import BacktestConfig
     from .backtest.review import breakdowns
 
-    session = "premarket" if session == "premarket" else "regular"
+    session = session if session in ("premarket", "intraday", "regular") else "premarket"
     days = max(5, min(int(days), 120))
 
     def run():
@@ -372,8 +372,9 @@ def _run_real_backtest(p: dict, on_progress=None) -> dict:
     key = _massive_key()
     if not key:
         raise RuntimeError("no Massive/POLYGON_API_KEY configured on the server")
+    universe = "active" if p["session"] == "intraday" else "gap"
     prov = PolygonHistory(key, days=p["days"], max_per_min=0, max_candidates_per_day=p["max_candidates"],
-                          fetch_news=False, cache_dir="data/cache/polygon")
+                          fetch_news=False, cache_dir="data/cache/polygon", universe_mode=universe)
     scan = ScanConfig(require_news=False, min_relative_volume=p["min_rvol"])
     bt = BacktestConfig(session=p["session"], target_r=p["target_r"], max_hold_minutes=p["max_hold"],
                         slippage_pct=p["slippage_pct"], premarket_slippage_pct=p["slippage_pct"],
@@ -424,7 +425,7 @@ async def backtest_launch(session: str = "premarket", days: int = 252, target_r:
         return {"ok": False,
                 "error": f"{running} running (max {_MAX_CONCURRENT_JOBS}) — wait for one to finish"}
     params = {
-        "session": "premarket" if session == "premarket" else "regular",
+        "session": session if session in ("premarket", "intraday", "regular") else "premarket",
         "days": max(5, min(int(days), 1300)),   # up to ~5y
         "target_r": target_r, "slippage_pct": slippage_pct, "max_hold": max_hold,
         "time_exit_tod": int(time_exit_tod), "min_rvol": min_rvol,

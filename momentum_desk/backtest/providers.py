@@ -86,16 +86,25 @@ class SyntheticHistory:
         if cand is None:
             return []
         rng = random.Random(f"{day}:{symbol}")
-        # day-type: some gappers follow through, most fade — neutral, not rigged
+        # day-type: some gappers follow through, most fade — neutral, not rigged.
+        # intraday-session names need bigger post-open swings to trip a HOD break,
+        # so winners drift harder there (still ~half losers).
         roll = rng.random()
-        drift = rng.uniform(0.0008, 0.004) if roll < 0.42 else -rng.uniform(0.0005, 0.0035)
+        if self._session == "intraday":
+            drift = rng.uniform(0.002, 0.006) if roll < 0.45 else -rng.uniform(0.001, 0.004)
+        else:
+            drift = rng.uniform(0.0008, 0.004) if roll < 0.42 else -rng.uniform(0.0005, 0.0035)
         vol = rng.uniform(0.006, 0.018)
 
-        # premarket sessions run 04:00→~10:30 ET (390 bars) so an entry before
-        # 09:30 can be held into the open; regular sessions are 09:30 + 90 min.
+        # premarket: 04:00→~10:30 (390 bars). intraday: 09:30→~12:40 (190 bars,
+        # room for a post-open HOD break + hold). regular: 09:30 + 90 min.
         premarket = self._session == "premarket"
-        start_tod = PREMARKET_OPEN_TOD if premarket else MARKET_OPEN_TOD
-        n_bars = 390 if premarket else 90
+        if premarket:
+            start_tod, n_bars = PREMARKET_OPEN_TOD, 390
+        elif self._session == "intraday":
+            start_tod, n_bars = MARKET_OPEN_TOD, 190
+        else:
+            start_tod, n_bars = MARKET_OPEN_TOD, 90
         # thinner volume + wider noise before the open, like a real pre-market book
         vol *= 1.6 if premarket else 1.0
 
@@ -130,12 +139,15 @@ class PolygonHistory:
     def __init__(self, api_key: str, days: int = 30, min_gap_pct: float = 10.0,
                  min_price: float = 1.0, max_price: float = 30.0,
                  cache_dir: str = "data/cache/polygon", max_per_min: float = 5,
-                 fetch_news: bool = True, max_candidates_per_day: int = 20) -> None:
+                 fetch_news: bool = True, max_candidates_per_day: int = 20,
+                 universe_mode: str = "gap", min_rvol_universe: float = 3.0) -> None:
         self._n = days
         self._min_gap = min_gap_pct
         self._min_price, self._max_price = min_price, max_price
         self._fetch_news = fetch_news
         self._max_candidates = max_candidates_per_day
+        self._universe_mode = universe_mode   # "gap" (open gappers) | "active" (high RVOL, any open)
+        self._min_rvol_universe = min_rvol_universe
         self._grouped: dict[str, dict] = {}   # day -> {sym: bar}
         self._avg_cache: dict[str, float] = {}
         self._avg_cache_by_sym: dict[str, list[tuple[str, float]]] = {}  # sym -> [(date, volume)]
@@ -172,7 +184,7 @@ class PolygonHistory:
         if prior is None:
             return []
         today, yday = self._grouped_day(day), self._grouped_day(prior)
-        rows = []
+        rows = []   # {sym, prev_close, day_open, prior_vol, today_vol, high, low}
         for sym, bar in today.items():
             prev = yday.get(sym)
             if not prev:
@@ -180,22 +192,52 @@ class PolygonHistory:
             prev_close, day_open = prev.get("c", 0), bar.get("o", 0)
             if prev_close <= 0 or not (self._min_price <= day_open <= self._max_price):
                 continue
-            gap = 100.0 * (day_open - prev_close) / prev_close
-            if gap < self._min_gap:
-                continue
-            rows.append((gap, sym, prev_close, day_open, prev.get("v", 0) or 1))
-        # bound enrichment (news) to the strongest gappers
-        rows.sort(reverse=True)
+            rows.append({"sym": sym, "prev_close": prev_close, "day_open": day_open,
+                         "prior_vol": prev.get("v", 0) or 1, "today_vol": bar.get("v", 0) or 1,
+                         "high": bar.get("h", 0), "low": bar.get("l", 0) or day_open})
+
+        if self._universe_mode == "active":
+            chosen = self._active_universe(rows, day)
+        else:
+            gappers = [r for r in rows if 100.0 * (r["day_open"] - r["prev_close"]) / r["prev_close"] >= self._min_gap]
+            gappers.sort(key=lambda r: (r["day_open"] - r["prev_close"]) / r["prev_close"], reverse=True)
+            chosen = gappers[: self._max_candidates]
+
         out = []
-        for _gap, sym, prev_close, day_open, vol in rows[: self._max_candidates]:
-            has_news, headline = self._premarket_news(sym, day) if self._fetch_news else (False, "")
+        for r in chosen:
+            has_news, headline = self._premarket_news(r["sym"], day) if self._fetch_news else (False, "")
             out.append(DayCandidate(
-                symbol=sym, day=day, prev_close=prev_close, day_open=day_open,
-                avg_volume_20d=self._avg_vol_20d(sym, day, vol),   # true trailing-20d avg
+                symbol=r["sym"], day=day, prev_close=r["prev_close"], day_open=r["day_open"],
+                avg_volume_20d=self._avg_vol_20d(r["sym"], day, r["prior_vol"]),   # true trailing-20d avg
                 float_shares=None,    # shares-outstanding (≈float) lookup omitted in batch backtest
                 has_news=has_news, news_headline=headline,
             ))
         return out
+
+    # how many names to RVOL-check per day; wide net so high-RVOL low-floats
+    # aren't crowded out by big-cap volume before RVOL is even computed
+    _ACTIVE_SUPERSET = 150
+
+    def _active_universe(self, rows: list, day: str) -> list:
+        """High-RVOL names regardless of open gap (for intraday momentum). RVOL
+        (today vol / trailing-20d avg) is the signal — a low-float runner can be
+        100x+. We can't compute it for every stock, so take a wide superset by
+        the cheap proxies (raw volume ∪ intraday range), compute true RVOL for
+        those, and keep the top by RVOL. Universe selection uses end-of-day stats
+        to bound what to simulate; the intraday entry itself stays point-in-time."""
+        for r in rows:
+            r["range_pct"] = 100.0 * (r["high"] - r["low"]) / r["low"] if r["low"] > 0 else 0.0
+        by_vol = sorted(rows, key=lambda r: r["today_vol"], reverse=True)[: self._ACTIVE_SUPERSET]
+        by_rng = sorted(rows, key=lambda r: r["range_pct"], reverse=True)[: self._ACTIVE_SUPERSET]
+        superset = {r["sym"]: r for r in by_vol + by_rng}.values()   # union, de-duped
+        scored = []
+        for r in superset:
+            avg = self._avg_vol_20d(r["sym"], day, r["prior_vol"])
+            rvol = r["today_vol"] / avg if avg > 0 else 0.0
+            if rvol >= self._min_rvol_universe:
+                scored.append((rvol, r))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [r for _rv, r in scored[: self._max_candidates]]
 
     def _avg_vol_20d(self, sym: str, day: str, fallback: float) -> float:
         """True trailing-20-session average volume — one cached daily-aggs call

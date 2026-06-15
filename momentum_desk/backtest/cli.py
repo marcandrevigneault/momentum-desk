@@ -31,8 +31,8 @@ def main() -> None:
     ap.add_argument("--max-hold", type=int, default=60)
     ap.add_argument("--slippage-pct", type=float, default=0.1)
     ap.add_argument("--no-anti-chase", action="store_true", help="disable the VWAP anti-chase filter")
-    ap.add_argument("--session", choices=["regular", "premarket"], default="regular",
-                    help="premarket = enter 04:00–09:30 and hold into the open")
+    ap.add_argument("--session", choices=["regular", "premarket", "intraday"], default="regular",
+                    help="premarket = 04:00–09:30 entry held into open; intraday = post-open HOD-break")
     ap.add_argument("--time-exit", metavar="HH:MM",
                     help="force flat at this ET time, e.g. 10:30 (the late-morning fade)")
     ap.add_argument("--trades", type=int, default=12, help="how many sample trades to print")
@@ -43,7 +43,8 @@ def main() -> None:
         key = os.environ.get("POLYGON_API_KEY", "")
         if not key:
             raise SystemExit("POLYGON_API_KEY not set — needed for --polygon")
-        provider = PolygonHistory(key, days=args.days)
+        provider = PolygonHistory(key, days=args.days,
+                                  universe_mode="active" if args.session == "intraday" else "gap")
         synthetic = False
     else:
         provider = SyntheticHistory(days=args.days, session=args.session)
@@ -87,7 +88,8 @@ def main() -> None:
     print(f"  max drawdown      ${m.max_drawdown:,.2f}   ({m.max_drawdown_pct:.2f}%)")
 
     verdict = ("POSITIVE expectancy" if m.expectancy_r > 0 else "NEGATIVE expectancy")
-    sess = "premarket (enter 04:00–09:30, hold into open)" if args.session == "premarket" else "regular hours"
+    sess = {"premarket": "premarket (enter 04:00–09:30, hold into open)",
+            "intraday": "intraday (post-open high-of-day momentum break)"}.get(args.session, "regular hours")
     print(f"\n  → {verdict} · {sess} · {args.target_r:.0f}R target · "
           f"{'anti-chase ON' if bt.use_anti_chase else 'anti-chase OFF'}.")
 

@@ -168,14 +168,15 @@ def _main() -> None:
     ap.add_argument("--polygon", action="store_true")
     ap.add_argument("--days", type=int, default=60)
     ap.add_argument("--folds", type=int, default=4)
-    ap.add_argument("--session", choices=["regular", "premarket"], default="regular")
+    ap.add_argument("--session", choices=["regular", "premarket", "intraday"], default="regular")
     args = ap.parse_args()
 
     if args.polygon:
         key = os.environ.get("POLYGON_API_KEY", "")
         if not key:
             raise SystemExit("POLYGON_API_KEY not set — needed for --polygon")
-        provider = PolygonHistory(key, days=args.days)
+        provider = PolygonHistory(key, days=args.days,
+                                  universe_mode="active" if args.session == "intraday" else "gap")
         synthetic = False
     else:
         provider = SyntheticHistory(days=args.days, session=args.session)
