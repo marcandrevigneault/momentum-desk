@@ -14,6 +14,15 @@ not emotionally.** Each item becomes a branch + PR; PRs must pass CI.
 | 6 | **Dashboard UX: detail panel, sparkline, alerts** | Click a row → intraday chart + plan reasons; alert on a fresh actionable signal so you act early instead of chasing. | low | `feat/dashboard-detail` |
 | 7 | **Config & secrets hardening + deploy docs** | Validate config, document the GHCR image deploy, env-var secrets. Operational polish. | low | `feat/ops-hardening` |
 
+## Status (2026-06-15)
+- ✅ **CI/CD** live on `main` — lint + test (py3.12/3.13), dashboard build,
+  Docker image pushed to GHCR. All green.
+- ✅ **#1 Trade journal** — merged (#2).
+- ✅ **#3 Backtest robustness** — merged (#3).
+- 🟡 **#2 IBKR paper** — open as **draft PR #4** (green CI); needs a live TWS
+  paper session to validate the broker path before merge.
+- ⬜ **#4–#7** — scoped above, not yet started.
+
 ## Principles every feature inherits
 - **Paper/mock defaults; live is an explicit, deliberate switch.**
 - **The risk engine is the boss** — sizing, daily-loss breaker, and liquidity
