@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+from pathlib import Path
 
 from momentum_desk.backtest.http import CachedClient
 
@@ -23,17 +24,27 @@ client = CachedClient("https://api.polygon.io", KEY, cache_dir="data/cache/polyg
 MIN_PRICE, MAX_PRICE, MIN_GAP = 1.0, 30.0, 10.0
 TOP_N = 20   # PolygonHistory default max_candidates_per_day
 
-TRADES = [
-    ("2026-06-15", "CUPR"), ("2026-06-15", "JRSH"), ("2026-06-11", "EDHL"),
-    ("2026-06-11", "QH"), ("2026-06-11", "FGL"), ("2026-06-10", "DSY"),
-    ("2026-06-10", "VSME"), ("2026-06-10", "CLWT"), ("2026-06-10", "GCDT"),
-    ("2026-06-10", "KIDZ"), ("2026-06-10", "QH"), ("2026-06-09", "AZI"),
-    ("2026-06-09", "AHMA"), ("2026-06-09", "PAVS"), ("2026-06-09", "DAIC"),
-    ("2026-06-09", "ELPW"), ("2026-06-09", "UK"), ("2026-06-08", "INHD"),
-    ("2026-06-04", "STI"), ("2026-06-02", "BJDX"), ("2026-06-01", "MASK"),
-    ("2026-06-01", "MTEK"), ("2026-06-01", "HKIT"), ("2026-05-29", "OLOX"),
-    ("2026-05-29", "CMND"),
-]
+# Ross's actual trades live in data/ross_trades.tsv (gitignored) — append rows
+# as "YYYY-MM-DD<ws>TICKER" and re-run. Falls back to a couple of examples.
+TRADES_FILE = os.environ.get("ROSS_TRADES", "data/ross_trades.tsv")
+
+
+def load_trades() -> list[tuple[str, str]]:
+    p = Path(TRADES_FILE)
+    if not p.exists():
+        return [("2026-06-15", "CUPR"), ("2026-06-10", "DSY")]
+    out = []
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            out.append((parts[0], parts[1].upper()))
+    return out
+
+
+TRADES = load_trades()
 
 
 def grouped(day: str) -> dict:
