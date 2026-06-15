@@ -3,14 +3,16 @@ import BacktesterPage from "./pages/BacktesterPage";
 import CockpitPage from "./pages/CockpitPage";
 import EdgePage from "./pages/EdgePage";
 import ExitLabPage from "./pages/ExitLabPage";
+import GauntletPage from "./pages/GauntletPage";
 
-type Page = "cockpit" | "backtester" | "edge" | "exits";
+type Page = "cockpit" | "backtester" | "edge" | "exits" | "gauntlet";
 
 const NAV: { id: Page; label: string; icon: string; hint: string }[] = [
   { id: "cockpit", label: "Cockpit", icon: "▦", hint: "live scanner, charts, paper trading" },
   { id: "backtester", label: "Backtester", icon: "📈", hint: "run + visualize a strategy backtest" },
   { id: "edge", label: "Edge", icon: "🔬", hint: "which variables carry edge" },
   { id: "exits", label: "Exit lab", icon: "🚪", hint: "compare exit policies head-to-head" },
+  { id: "gauntlet", label: "Gauntlet", icon: "⚖️", hint: "does the edge survive honest scrutiny" },
 ];
 
 export default function App() {
@@ -73,7 +75,7 @@ export default function App() {
 
       {/* active page */}
       <div className="grow min-h-0">
-        {page === "cockpit" ? <CockpitPage /> : page === "backtester" ? <BacktesterPage /> : page === "edge" ? <EdgePage /> : <ExitLabPage />}
+        {page === "cockpit" ? <CockpitPage /> : page === "backtester" ? <BacktesterPage /> : page === "edge" ? <EdgePage /> : page === "exits" ? <ExitLabPage /> : <GauntletPage />}
       </div>
     </div>
   );

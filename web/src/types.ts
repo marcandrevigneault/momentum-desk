@@ -207,6 +207,62 @@ export interface ExitLab {
   sessions: Record<string, ExitLabSession>;
 }
 
+export interface GauntletCheck {
+  name: string;
+  status: string;   // "pass" | "caution" | "fail"
+  detail: string;
+}
+
+export interface GauntletFold {
+  fold: number;
+  is_n: number;
+  oos_n: number;
+  selected: string;
+  is_exp: number;
+  oos_exp: number;
+}
+
+export interface GauntletRegimeRow {
+  period: string;
+  n: number;
+  expectancy_r: number;
+}
+
+export interface GauntletSession {
+  session: string;
+  candidate: string;
+  n_trades: number;
+  n_days: number;
+  expectancy_r: number;
+  sharpe_daily: number;
+  skew: number;
+  kurt: number;
+  boot_lo: number;
+  boot_hi: number;
+  boot_p_pos: number;
+  n_trials: number;
+  sr_star: number;
+  psr: number;
+  dsr: number;
+  folds: GauntletFold[];
+  wf_oos_exp: number;
+  wf_pos_folds: number;
+  regime: GauntletRegimeRow[];
+  months_pos_frac: number;
+  holdout_n: number;
+  holdout_exp: number;
+  checks: GauntletCheck[];
+  verdict: string;
+}
+
+export interface Gauntlet {
+  generated: string | null;
+  days: number | null;
+  data: string | null;
+  source: string;
+  sessions: Record<string, GauntletSession>;
+}
+
 export interface BacktestRun {
   synthetic: boolean;
   session: string;
