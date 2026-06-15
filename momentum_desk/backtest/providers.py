@@ -11,12 +11,10 @@ then minute aggregates drive the intraday simulation. Approximations are noted.
 from __future__ import annotations
 
 import datetime as dt
-import json
 import random
-import urllib.parse
-import urllib.request
 
 from .data import DayCandidate, MinuteBar
+from .http import CachedClient
 
 _HEADLINES = [
     "announces positive trial data", "signs distribution agreement",
@@ -113,21 +111,19 @@ class PolygonHistory:
     _BASE = "https://api.polygon.io"
 
     def __init__(self, api_key: str, days: int = 30, min_gap_pct: float = 10.0,
-                 min_price: float = 1.0, max_price: float = 20.0, timeout: float = 15.0) -> None:
-        self._key = api_key
+                 min_price: float = 1.0, max_price: float = 20.0,
+                 cache_dir: str = "data/cache/polygon", max_per_min: float = 5) -> None:
         self._n = days
         self._min_gap = min_gap_pct
         self._min_price, self._max_price = min_price, max_price
-        self._timeout = timeout
         self._grouped: dict[str, dict] = {}   # day -> {sym: bar}
         self._avg_cache: dict[str, float] = {}
+        # cached + throttled HTTP so sweeps replay from disk and we never get
+        # 429'd off the free tier (see backtest/http.py)
+        self.client = CachedClient(self._BASE, api_key, cache_dir=cache_dir, max_per_min=max_per_min)
 
     def _get(self, path: str, params: dict | None = None) -> dict:
-        params = dict(params or {})
-        params["apiKey"] = self._key
-        url = f"{self._BASE}{path}?{urllib.parse.urlencode(params)}"
-        with urllib.request.urlopen(url, timeout=self._timeout) as r:
-            return json.loads(r.read().decode())
+        return self.client.get_json(path, params)
 
     def trading_days(self) -> list[str]:
         days, d = [], dt.date.today() - dt.timedelta(days=1)
