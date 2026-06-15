@@ -20,9 +20,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import AppConfig, build_adapter, load_config
-from .models import Signal
+from .models import Signal, Snapshot
+from .paper import PaperDesk
 from .risk import RiskEngine
 from .scanner import ScannerEngine
+
+_HISTORY_CAP = 240   # intraday points kept per symbol for the chart
 
 
 class ScannerService:
@@ -33,23 +36,37 @@ class ScannerService:
         self.adapter = build_adapter(cfg)
         self.scanner = ScannerEngine(cfg.scanner)
         self.risk = RiskEngine(cfg.risk)
+        self.desk = PaperDesk(self.risk)
+        self.history: dict[str, list[dict]] = {}
+        self.last_price: dict[str, float] = {}
+
+    def _record_history(self, snaps: list[Snapshot]) -> None:
+        for s in snaps:
+            self.last_price[s.symbol] = s.last
+            buf = self.history.setdefault(s.symbol, [])
+            buf.append({"t": round(s.ts, 1), "last": s.last, "vwap": round(s.vwap, 4)})
+            if len(buf) > _HISTORY_CAP:
+                del buf[: len(buf) - _HISTORY_CAP]
+
+    def stop_for(self, snap: Snapshot) -> float:
+        return round(snap.last * 0.95, 2)   # illustrative 5% initial stop
 
     async def scan_once(self) -> dict:
         # adapters do blocking I/O (HTTP); keep the event loop free
         snaps = await asyncio.to_thread(lambda: list(self.adapter.poll()))
         by_symbol = {s.symbol: s for s in snaps}
+        self._record_history(snaps)
+        self.desk.update(self.last_price)   # trail stops + auto-exit on stop/target
         signals = self.scanner.scan(snaps)
+        prices = self.last_price
         return {
             "ts": max((s.ts for s in snaps), default=0.0),
             "feed": self.adapter.name,
             "mode": self.cfg.mode,
             "count": len(signals),
             "signals": [self._signal_dict(s, by_symbol.get(s.symbol)) for s in signals],
-            "account": {
-                "equity": self.risk.config.account_equity,
-                "realized_pnl_today": round(self.risk.realized_pnl_today, 2),
-                "daily_loss_limit_hit": self.risk.daily_loss_limit_hit,
-            },
+            "account": self.desk.account_view(prices),
+            "positions": self.desk.positions_view(prices),
         }
 
     def _signal_dict(self, s: Signal, snap) -> dict:
@@ -59,14 +76,17 @@ class ScannerService:
             "extension_above_vwap_pct": s.extension_above_vwap_pct,
             "float_millions": s.float_millions, "has_news": s.has_news,
             "news_headline": s.news_headline, "actionable": s.actionable,
-            "flags": [f.value for f in s.flags],
+            "flags": [f.value for f in s.flags], "held": s.symbol in self.desk.open,
         }
-        # attach an illustrative risk-sized plan (5% stop) for actionable names
-        if s.actionable and snap is not None:
-            plan = self.risk.plan(snap, entry=s.last, stop=round(s.last * 0.95, 2))
+        # the trade conditions the cockpit draws on the chart: entry / stop / target / trail
+        if snap is not None:
+            stop = self.stop_for(snap)
+            plan = self.risk.plan(snap, entry=s.last, stop=stop)
             d["plan"] = {
-                "ok": plan.ok, "shares": plan.shares, "entry": plan.entry,
-                "stop": plan.stop, "risk_dollars": plan.risk_dollars, "reasons": plan.reasons,
+                "ok": plan.ok, "shares": plan.shares, "entry": plan.entry, "stop": plan.stop,
+                "target": round(plan.entry + self.desk.target_r * (plan.entry - plan.stop), 4),
+                "trail_pct": self.desk.trail_pct,
+                "risk_dollars": plan.risk_dollars, "reasons": plan.reasons,
             }
         return d
 
@@ -172,6 +192,46 @@ async def get_config() -> dict:
 @app.get("/api/signals")
 async def signals() -> dict:
     return await app.state.service.scan_once()
+
+
+@app.get("/api/history/{symbol}")
+async def history(symbol: str) -> dict:
+    svc: ScannerService = app.state.service
+    return {"symbol": symbol, "points": svc.history.get(symbol, [])}
+
+
+@app.get("/api/positions")
+async def positions() -> dict:
+    svc: ScannerService = app.state.service
+    return {"positions": svc.desk.positions_view(svc.last_price),
+            "account": svc.desk.account_view(svc.last_price)}
+
+
+@app.get("/api/trades")
+async def trades() -> dict:
+    return {"trades": app.state.service.desk.trades_view()}
+
+
+@app.post("/api/trade/open/{symbol}")
+async def trade_open(symbol: str) -> dict:
+    svc: ScannerService = app.state.service
+    snaps = await asyncio.to_thread(lambda: list(svc.adapter.poll()))
+    snap = next((s for s in snaps if s.symbol == symbol), None)
+    if snap is None:
+        return {"ok": False, "reasons": [f"{symbol} not in the current scan"]}
+    return svc.desk.open_position(snap, entry=snap.last, stop=svc.stop_for(snap))
+
+
+@app.post("/api/trade/close/{symbol}")
+async def trade_close(symbol: str) -> dict:
+    svc: ScannerService = app.state.service
+    price = svc.last_price.get(symbol)
+    if price is None:
+        return {"ok": False, "reasons": [f"no price for {symbol}"]}
+    trade = svc.desk.close_position(symbol, price, "manual")
+    if trade is None:
+        return {"ok": False, "reasons": [f"no open position in {symbol}"]}
+    return {"ok": True, "pnl": trade.pnl, "exit": trade.exit}
 
 
 @app.websocket("/ws/signals")
