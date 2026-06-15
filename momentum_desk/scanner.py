@@ -19,8 +19,10 @@ from .models import Flag, Signal, Snapshot
 @dataclass
 class ScanConfig:
     # --- candidate band (what Ross-style runners look like) ---
+    # band widened to $30 after calibrating vs Ross's actual trades (he took a
+    # $24.77 runner our old $20 cap missed)
     min_price: float = 1.0
-    max_price: float = 20.0
+    max_price: float = 30.0
     max_float_millions: float = 20.0      # "low float"
     min_relative_volume: float = 5.0      # unusual activity vs 20d avg
     min_gap_pct: float = 10.0             # gapping into the day
