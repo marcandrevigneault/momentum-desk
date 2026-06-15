@@ -263,6 +263,52 @@ export interface Gauntlet {
   sessions: Record<string, GauntletSession>;
 }
 
+export interface SimDailyEquity {
+  date: string;
+  equity: number;
+}
+
+export interface SimTrade {
+  day: string;
+  symbol: string;
+  entry_tod: number;
+  exit_tod: number;
+  entry: number;
+  exit: number;
+  shares: number;
+  pnl: number;
+  r_multiple: number;
+  exit_reason: string;
+}
+
+export interface SimStressRow {
+  slippage_pct: number;
+  final_equity: number;
+  return_pct: number;
+  win_rate: number;
+  profit_factor: number;
+  expectancy_r: number;
+  max_drawdown_pct: number;
+}
+
+export interface SimRun {
+  source: string;
+  session: string;
+  stress?: SimStressRow[];
+  exit_policy: string;
+  days: number;
+  starting_equity: number;
+  final_equity: number;
+  n_signals: number;
+  n_taken: number;
+  n_skipped_capacity: number;
+  metrics: BacktestMetrics;
+  equity_curve: number[];
+  daily_equity: SimDailyEquity[];
+  monthly: PeriodRow[];
+  trades: SimTrade[];
+}
+
 export interface BacktestRun {
   synthetic: boolean;
   session: string;

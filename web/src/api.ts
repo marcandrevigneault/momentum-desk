@@ -38,6 +38,11 @@ export async function getGauntlet(): Promise<import("./types").Gauntlet> {
   return r.json();
 }
 
+export async function getSimRun(): Promise<import("./types").SimRun> {
+  const r = await fetch("/api/simrun");
+  return r.json();
+}
+
 export async function getTrades(): Promise<Trade[]> {
   const r = await fetch("/api/trades");
   return (await r.json()).trades ?? [];

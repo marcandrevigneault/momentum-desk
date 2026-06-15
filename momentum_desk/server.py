@@ -329,6 +329,25 @@ async def edge_screen() -> dict:
     return out
 
 
+@app.get("/api/simrun")
+async def sim_run() -> dict:
+    """Full end-to-end account simulation of the assembled strategy. Prefers a
+    fresh data/sim_year.json on the volume, else the committed snapshot."""
+    fresh = Path("data/sim_year.json")
+    if fresh.exists():
+        try:
+            return {"source": "live", **json.loads(fresh.read_text())}
+        except Exception:  # noqa: BLE001
+            pass
+    snap = Path(__file__).parent / "edge" / "sim_snapshot.json"
+    if snap.exists():
+        try:
+            return {"source": "snapshot", **json.loads(snap.read_text())}
+        except Exception:  # noqa: BLE001
+            pass
+    return {"source": "none", "trades": [], "metrics": {}}
+
+
 @app.get("/api/gauntlet")
 async def gauntlet() -> dict:
     """Phase-3 evaluation gauntlet: the candidate strategy's verdict per session

@@ -81,21 +81,30 @@ def _atr(bars: list[MinuteBar]) -> float:
     return sum(trs) / len(trs) if trs else 0.0
 
 
-def simulate_exit(
+@dataclass
+class ExitFill:
+    r: float
+    reason: str
+    bars_held: int
+    exit_price: float
+    exit_tod: int       # ET minute-of-day of the exit bar
+
+
+def simulate_exit_detail(
     entry: float, init_stop: float, prior_bars: list[MinuteBar], fwd: list[MinuteBar],
     policy: ExitPolicy, slippage_pct: float,
-) -> tuple[float, str, int]:
-    """Return (r_multiple, exit_reason, bars_held) for one entry under one policy."""
+) -> ExitFill:
+    """Full exit fill (price, time, reason, R) for one entry under one policy."""
     risk = entry - init_stop
     if risk <= 0 or not fwd:
-        return 0.0, "void", 0
+        return ExitFill(0.0, "void", 0, entry, fwd[0].tod if fwd else 0)
     slip = slippage_pct / 100.0
     target = entry + policy.target_r * risk if policy.target_r is not None else None
     atr = _atr(prior_bars[-14:]) if policy.trail_kind == "atr" else 0.0
     high_water = entry  # as of the *prior* bar — updated at each bar's close
 
-    def r(px: float) -> float:
-        return (px - entry) / risk
+    def fill(px: float, reason: str, b: MinuteBar, i: int) -> ExitFill:
+        return ExitFill((px - entry) / risk, reason, i + 1, px, b.tod)
 
     for i, b in enumerate(fwd):
         # effective stop for THIS bar uses only info known before it (high_water
@@ -113,15 +122,25 @@ def simulate_exit(
 
         if b.l <= eff_stop:                                   # stop / trail first (pessimistic)
             reason = "stop" if eff_stop == init_stop else "trail"
-            return r(eff_stop * (1 - slip)), reason, i + 1
+            return fill(eff_stop * (1 - slip), reason, b, i)
         if target is not None and b.h >= target:
-            return r(target * (1 - slip)), "target", i + 1
+            return fill(target * (1 - slip), "target", b, i)
         if policy.vwap_loss and b.vwap > 0 and b.c < b.vwap:  # momentum-loss exit on the close
-            return r(b.c * (1 - slip)), "vwap", i + 1
+            return fill(b.c * (1 - slip), "vwap", b, i)
 
         high_water = max(high_water, b.h)
 
-    return r(fwd[-1].c * (1 - slip)), "time", len(fwd)   # time cap
+    last = fwd[-1]
+    return fill(last.c * (1 - slip), "time", last, len(fwd) - 1)   # time cap
+
+
+def simulate_exit(
+    entry: float, init_stop: float, prior_bars: list[MinuteBar], fwd: list[MinuteBar],
+    policy: ExitPolicy, slippage_pct: float,
+) -> tuple[float, str, int]:
+    """Return (r_multiple, exit_reason, bars_held) for one entry under one policy."""
+    f = simulate_exit_detail(entry, init_stop, prior_bars, fwd, policy, slippage_pct)
+    return f.r, f.reason, f.bars_held
 
 
 def _metrics(policy: ExitPolicy, rs: list[float], holds: list[int], reasons: list[str]) -> ExitMetrics:
