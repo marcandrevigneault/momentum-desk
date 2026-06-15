@@ -41,3 +41,8 @@ export async function runBacktest(p: BacktestParams) {
   const r = await fetch(`/api/backtest?${q}`, { method: "POST" });
   return r.json();
 }
+
+export async function getRealRun() {
+  const r = await fetch("/api/realrun");
+  return r.json();
+}
