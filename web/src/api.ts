@@ -46,3 +46,18 @@ export async function getRealRun() {
   const r = await fetch("/api/realrun");
   return r.json();
 }
+
+export async function launchRealBacktest(p: BacktestParams) {
+  const q = new URLSearchParams({
+    session: p.session, days: String(p.days), target_r: String(p.target_r),
+    slippage_pct: String(p.slippage_pct), max_hold: String(p.max_hold),
+    time_exit_tod: String(p.time_exit_tod),
+  });
+  const r = await fetch(`/api/backtest/launch?${q}`, { method: "POST" });
+  return r.json();
+}
+
+export async function pollJob(id: string) {
+  const r = await fetch(`/api/backtest/job/${id}`);
+  return r.json();
+}

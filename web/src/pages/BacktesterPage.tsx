@@ -2,8 +2,10 @@ import { useState } from "react";
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { getRealRun, runBacktest } from "../api";
+import { getRealRun, launchRealBacktest, pollJob, runBacktest } from "../api";
 import type { BacktestRun, PeriodRow } from "../types";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const money = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
@@ -87,15 +89,34 @@ export default function BacktesterPage() {
   const [slippage, setSlippage] = useState(0.5);
   const [maxHold, setMaxHold] = useState(60);
   const [timeExit, setTimeExit] = useState(630);   // 0=off, 600=10:00, 630=10:30
+  const [feed, setFeed] = useState<"synthetic" | "real">("synthetic");
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState<BacktestRun | null>(null);
   const [note, setNote] = useState<string | null>(null);
+
+  const params = { session, days, target_r: targetR, slippage_pct: slippage, max_hold: maxHold, time_exit_tod: timeExit };
 
   const go = async () => {
     setBusy(true);
     setNote(null);
     try {
-      setRun(await runBacktest({ session, days, target_r: targetR, slippage_pct: slippage, max_hold: maxHold, time_exit_tod: timeExit }));
+      if (feed === "synthetic") {
+        setRun(await runBacktest(params));
+        return;
+      }
+      // real data: launch an async job and poll (a multi-year first run is slow)
+      const launched = await launchRealBacktest(params);
+      if (!launched.ok) {
+        setNote(launched.error ?? "could not launch real backtest");
+        return;
+      }
+      for (;;) {
+        await sleep(2000);
+        const j = await pollJob(launched.job_id);
+        if (j.status === "done") { setRun(j.result); break; }
+        if (j.status === "error" || j.status === "unknown") { setNote(j.error ?? "job was lost"); break; }
+        setNote(`fetching real Massive data… ${Math.round(j.elapsed)}s (first multi-year run can take minutes; cached after)`);
+      }
     } finally {
       setBusy(false);
     }
@@ -120,14 +141,20 @@ export default function BacktesterPage() {
     <div className="h-full flex flex-col" style={{ background: "var(--bg)" }}>
       {/* controls */}
       <div className="flex flex-wrap items-end gap-4 px-4 py-3 shrink-0" style={{ background: "var(--panel)", borderBottom: "1px solid var(--line)" }}>
+        <Field label="Data">
+          <select className={inputCls} style={inputStyle} value={feed} onChange={(e) => setFeed(e.target.value as "synthetic" | "real")}>
+            <option value="synthetic">synthetic (instant)</option>
+            <option value="real">real — Massive</option>
+          </select>
+        </Field>
         <Field label="Session">
           <select className={inputCls} style={inputStyle} value={session} onChange={(e) => setSession(e.target.value)}>
             <option value="premarket">pre-market (4:00–9:30, hold into open)</option>
             <option value="regular">regular hours</option>
           </select>
         </Field>
-        <Field label="Days">
-          <input className={`${inputCls} w-20`} style={inputStyle} type="number" value={days} min={5} max={120} onChange={(e) => setDays(+e.target.value)} />
+        <Field label={feed === "real" ? "Days (≤1300)" : "Days (≤120)"}>
+          <input className={`${inputCls} w-24`} style={inputStyle} type="number" value={days} min={5} max={feed === "real" ? 1300 : 120} onChange={(e) => setDays(+e.target.value)} />
         </Field>
         <Field label="Target R">
           <input className={`${inputCls} w-20`} style={inputStyle} type="number" step={0.5} value={targetR} onChange={(e) => setTargetR(+e.target.value)} />

@@ -12,6 +12,8 @@ import asyncio
 import base64
 import os
 import secrets
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -23,7 +25,7 @@ from .config import AppConfig, build_adapter, load_config
 from .models import Signal, Snapshot
 from .paper import PaperDesk
 from .risk import RiskEngine
-from .scanner import ScannerEngine
+from .scanner import ScanConfig, ScannerEngine
 
 _HISTORY_CAP = 240   # intraday points kept per symbol for the chart
 
@@ -140,6 +142,7 @@ class BasicAuthMiddleware:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.service = ScannerService(load_config())
+    app.state.jobs = {}          # job_id -> {status, params, started, result, error}
     cfg = app.state.service.cfg
     print(f"[server] feed={app.state.service.adapter.name} mode={cfg.mode} "
           f"interval={cfg.scan_interval_s}s")
@@ -261,6 +264,83 @@ async def realrun() -> dict:
         return {"available": True, **json.loads(p.read_text())}
     except Exception:  # noqa: BLE001
         return {"available": False}
+
+
+def _massive_key() -> str:
+    return os.environ.get("POLYGON_API_KEY", "") or load_config().polygon_api_key
+
+
+def _run_real_backtest(p: dict) -> dict:
+    """Blocking: a real Massive-data backtest. Runs in a worker thread. First
+    multi-year run fetches a lot (cached to disk after); re-runs replay fast."""
+    from dataclasses import asdict
+
+    from .backtest import Backtester, PolygonHistory
+    from .backtest.engine import BacktestConfig
+    from .backtest.review import breakdowns
+
+    key = _massive_key()
+    if not key:
+        raise RuntimeError("no Massive/POLYGON_API_KEY configured on the server")
+    prov = PolygonHistory(key, days=p["days"], max_per_min=0, max_candidates_per_day=p["max_candidates"],
+                          fetch_news=False, cache_dir="data/cache/polygon")
+    scan = ScanConfig(require_news=False, min_relative_volume=p["min_rvol"])
+    bt = BacktestConfig(session=p["session"], target_r=p["target_r"], max_hold_minutes=p["max_hold"],
+                        slippage_pct=p["slippage_pct"], premarket_slippage_pct=p["slippage_pct"],
+                        time_exit_tod=p["time_exit_tod"])
+    res = Backtester(prov, scan=scan, bt=bt).run()
+    bd = breakdowns(res.trades)
+    return {
+        "synthetic": False, "feed": "massive", "session": p["session"], "days": res.days,
+        "metrics": asdict(res.metrics), "equity_curve": res.equity_curve,
+        "trades": [asdict(t) for t in res.trades], "monthly": bd["monthly"], "yearly": bd["yearly"],
+    }
+
+
+async def _job_worker(job_id: str, params: dict) -> None:
+    job = app.state.jobs[job_id]
+    try:
+        job["result"] = await asyncio.to_thread(_run_real_backtest, params)
+        job["status"] = "done"
+    except Exception as e:  # noqa: BLE001
+        job["status"] = "error"
+        job["error"] = str(e)
+
+
+@app.post("/api/backtest/launch")
+async def backtest_launch(session: str = "premarket", days: int = 252, target_r: float = 2.0,
+                          slippage_pct: float = 0.5, max_hold: int = 60, time_exit_tod: int = 630,
+                          min_rvol: float = 3.0, max_candidates: int = 8) -> dict:
+    """Kick off a REAL Massive-data backtest in the background (so a multi-year
+    run doesn't time out the request). Poll /api/backtest/job/{id}."""
+    if not _massive_key():
+        return {"ok": False, "error": "no Massive key configured on the server"}
+    params = {
+        "session": "premarket" if session == "premarket" else "regular",
+        "days": max(5, min(int(days), 1300)),   # up to ~5y
+        "target_r": target_r, "slippage_pct": slippage_pct, "max_hold": max_hold,
+        "time_exit_tod": int(time_exit_tod), "min_rvol": min_rvol,
+        "max_candidates": max(1, min(int(max_candidates), 25)),
+    }
+    job_id = uuid.uuid4().hex[:12]
+    app.state.jobs[job_id] = {"status": "running", "params": params, "started": time.time(),
+                              "result": None, "error": None}
+    asyncio.create_task(_job_worker(job_id, params))
+    return {"ok": True, "job_id": job_id, "params": params}
+
+
+@app.get("/api/backtest/job/{job_id}")
+async def backtest_job(job_id: str) -> dict:
+    job = app.state.jobs.get(job_id)
+    if job is None:
+        return {"status": "unknown"}
+    out = {"status": job["status"], "elapsed": round(time.time() - job["started"], 1),
+           "params": job["params"]}
+    if job["status"] == "done":
+        out["result"] = job["result"]
+    elif job["status"] == "error":
+        out["error"] = job["error"]
+    return out
 
 
 @app.post("/api/trade/open/{symbol}")
