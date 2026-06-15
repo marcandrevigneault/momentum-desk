@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "httpx"]   # httpx backs fastapi's TestClient
 broker = ["ib-async"]          # IBKR connectivity (paper-first)
 
 [tool.setuptools.packages.find]
