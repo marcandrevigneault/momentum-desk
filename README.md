@@ -21,6 +21,13 @@ cd web && npm install && npm run dev               # dashboard → http://localh
 To use real data: copy `config.example.yaml` to `config.yaml`, set
 `data_feed: polygon` and your `polygon_api_key`, and restart the backend.
 
+```bash
+# 3) backtest — does the rule set survive fees + slippage? (synthetic, no key)
+python -m momentum_desk.backtest.cli --days 40
+python -m momentum_desk.backtest.cli --target-r 3 --slippage-pct 0.3   # stress it
+POLYGON_API_KEY=... python -m momentum_desk.backtest.cli --polygon --days 30  # real history
+```
+
 ---
 
 ## Read this before you trust it with a dollar
@@ -96,9 +103,30 @@ whole point.
 - [x] Mechanical risk engine (sizing, daily stop, liquidity guard)
 - [x] Real-time web dashboard (WebSocket streaming table, React + Vite)
 - [x] Real market data adapter — polygon.io (key-gated; falls back to mock)
+- [x] Backtester — opening-range-breakout on scanner candidates, honest fills
+      (adverse slippage both sides, commissions, pessimistic same-bar stops,
+      daily-loss breaker), expectancy report; synthetic + polygon history
 - [ ] IBKR connection — **paper account first** (quotes, then order routing)
-- [ ] Backtester on historical low-float gappers + expectancy report
 - [ ] Trade journal (every signal, decision, and fill logged for review)
+
+### Backtester — how to read it, and what it can't tell you
+
+The engine reuses the live `ScanConfig` and `RiskEngine`, so a backtest
+validates the *same* logic the desk would trade. It reports win rate, avg
+win/loss, profit factor, expectancy (\$ and **R** per trade), total P&L, and max
+drawdown. **R/trade** is the number that matters — positive expectancy after
+costs is the whole question.
+
+Honesty is enforced in the fills: no lookahead, adverse slippage on every entry
+*and* exit, commissions both sides, and when a bar touches both stop and target
+the **stop is assumed to fill first**. Even so:
+
+- **Synthetic data proves nothing about the strategy** — the prices are made up.
+  It only proves the engine computes correctly. Use `--polygon` for real numbers.
+- Real low-float slippage is *worse* than any fixed model — your size moves thin
+  books. Past expectancy is not future profit.
+- Survivorship and point-in-time gaps (news/float backfill) are documented in
+  `backtest/providers.py`; treat polygon results as indicative, not gospel.
 
 ## Safety defaults
 
