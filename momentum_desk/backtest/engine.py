@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from ..models import Snapshot
 from ..risk import RiskConfig, RiskEngine
 from ..scanner import ScanConfig
-from .data import BacktestResult, DayCandidate, HistoricalProvider, Metrics, Trade
+from .data import MARKET_OPEN_TOD, BacktestResult, DayCandidate, HistoricalProvider, Metrics, Trade
 
 
 @dataclass
@@ -35,6 +35,12 @@ class BacktestConfig:
     slippage_pct: float = 0.1          # adverse, each side (10 bps; thin names worse)
     commission_per_share: float = 0.005
     commission_min: float = 1.0
+    # --- pre-market session (entry 04:00–09:30, held into the open) ---
+    session: str = "regular"           # "regular" | "premarket"
+    premarket_or_minutes: int = 15     # opening range measured from 04:00
+    entry_cutoff_tod: int = 570        # no new entries at/after this ET minute (570 = 09:30)
+    premarket_slippage_pct: float = 0.5  # wider — thin pre-market books
+    premarket_volume_fraction: float = 0.1  # RVOL baseline: ~10% of daily avg trades pre-market
 
 
 class Backtester:
@@ -67,7 +73,8 @@ class Backtester:
                     break  # done trading this day
                 if not self._passes_open_gate(cand):
                     continue
-                trade = self._simulate(cand, risk)
+                sim = self._simulate_premarket if self.bt.session == "premarket" else self._simulate
+                trade = sim(cand, risk)
                 if trade is None:
                     skipped += 1
                     continue
@@ -162,6 +169,86 @@ class Backtester:
         return Trade(
             symbol=c.symbol, day=c.day, entry_t=eb.t, entry=round(entry, 4), stop=round(stop, 4),
             target=round(target, 4), shares=plan.shares, exit_t=bars[exit_idx].t,
+            exit=round(exit_px, 4), pnl=round(pnl, 2), r_multiple=round(r, 2), exit_reason=reason,
+        )
+
+    # ---------- one pre-market trade (entry 04:00–09:30, held into the open) ----------
+    def _simulate_premarket(self, c: DayCandidate, risk: RiskEngine) -> Trade | None:
+        bars = self.provider.minutes(c.symbol, c.day)
+        pm = [b for b in bars if b.tod < MARKET_OPEN_TOD]      # pre-market bars only
+        orn = self.bt.premarket_or_minutes
+        if len(pm) <= orn + 1:
+            return None
+        or_bars = pm[:orn]
+        or_high = max(b.h for b in or_bars)
+        or_low = min(b.l for b in or_bars)
+        stop = or_low * (1 - self.bt.stop_buffer_pct / 100.0)
+        slip = self.bt.premarket_slippage_pct / 100.0
+        or_end_tod = or_bars[-1].tod
+
+        # entry: first breakout of the OR high after the opening range, but
+        # before the entry cutoff (09:30) — pre-market entries only
+        entry_idx = None
+        for i, b in enumerate(bars):
+            if b.tod <= or_end_tod:
+                continue
+            if b.tod >= self.bt.entry_cutoff_tod:
+                break
+            if b.h >= or_high:
+                entry_idx = i
+                break
+        if entry_idx is None:
+            return None
+
+        eb = bars[entry_idx]
+        entry = or_high * (1 + slip)
+        if stop >= entry:
+            return None
+        # the real gap at entry is pre-market price vs the prior close
+        if 100.0 * (entry - c.prev_close) / c.prev_close < self.scan.min_gap_pct:
+            return None
+        # pre-market RVOL against a pre-market baseline (a fraction of daily avg)
+        base = c.avg_volume_20d * self.bt.premarket_volume_fraction
+        if base > 0 and eb.cum_volume / base < self.scan.min_relative_volume:
+            return None
+        ext = 100.0 * (entry - eb.vwap) / eb.vwap if eb.vwap > 0 else 0.0
+        if self.bt.use_anti_chase and ext > self.scan.max_extension_above_vwap_pct:
+            return None
+
+        snap = Snapshot(
+            symbol=c.symbol, last=entry, prev_close=c.prev_close, day_open=c.day_open,
+            vwap=eb.vwap, cum_volume=eb.cum_volume, avg_volume_20d=c.avg_volume_20d,
+            float_shares=c.float_shares,
+        )
+        plan = risk.plan(snap, entry=entry, stop=stop)
+        if not plan.ok or plan.shares <= 0:
+            return None
+
+        target = entry + self.bt.target_r * (entry - stop)
+        # hold INTO the open: a pre-market entry is carried through 09:30 and up
+        # to max_hold_minutes past the open, managing stop/target throughout
+        # (pessimistic same-bar). This is the whole point of session B.
+        deadline_tod = MARKET_OPEN_TOD + self.bt.max_hold_minutes
+        exit_t, exit_px, reason = eb.t, eb.c, "time"
+        for b in bars[entry_idx + 1:]:
+            if b.tod > deadline_tod:
+                exit_t, exit_px, reason = b.t, b.c * (1 - slip), "time"
+                break
+            if b.l <= stop:
+                exit_t, exit_px, reason = b.t, stop * (1 - slip), "stop"
+                break
+            if b.h >= target:
+                exit_t, exit_px, reason = b.t, target * (1 - slip), "target"
+                break
+            exit_t, exit_px = b.t, b.c * (1 - slip)   # carry a time-exit fallback
+
+        gross = (exit_px - entry) * plan.shares
+        commission = 2.0 * max(self.bt.commission_min, plan.shares * self.bt.commission_per_share)
+        pnl = gross - commission
+        r = pnl / plan.risk_dollars if plan.risk_dollars > 0 else 0.0
+        return Trade(
+            symbol=c.symbol, day=c.day, entry_t=eb.t, entry=round(entry, 4), stop=round(stop, 4),
+            target=round(target, 4), shares=plan.shares, exit_t=exit_t,
             exit=round(exit_px, 4), pnl=round(pnl, 2), r_multiple=round(r, 2), exit_reason=reason,
         )
 
