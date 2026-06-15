@@ -28,6 +28,11 @@ export async function getEdge(): Promise<import("./types").EdgeScreen> {
   return r.json();
 }
 
+export async function getExitLab(): Promise<import("./types").ExitLab> {
+  const r = await fetch("/api/exitlab");
+  return r.json();
+}
+
 export async function getTrades(): Promise<Trade[]> {
   const r = await fetch("/api/trades");
   return (await r.json()).trades ?? [];

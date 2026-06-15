@@ -2,13 +2,15 @@ import { useState } from "react";
 import BacktesterPage from "./pages/BacktesterPage";
 import CockpitPage from "./pages/CockpitPage";
 import EdgePage from "./pages/EdgePage";
+import ExitLabPage from "./pages/ExitLabPage";
 
-type Page = "cockpit" | "backtester" | "edge";
+type Page = "cockpit" | "backtester" | "edge" | "exits";
 
 const NAV: { id: Page; label: string; icon: string; hint: string }[] = [
   { id: "cockpit", label: "Cockpit", icon: "▦", hint: "live scanner, charts, paper trading" },
   { id: "backtester", label: "Backtester", icon: "📈", hint: "run + visualize a strategy backtest" },
   { id: "edge", label: "Edge", icon: "🔬", hint: "which variables carry edge" },
+  { id: "exits", label: "Exit lab", icon: "🚪", hint: "compare exit policies head-to-head" },
 ];
 
 export default function App() {
@@ -71,7 +73,7 @@ export default function App() {
 
       {/* active page */}
       <div className="grow min-h-0">
-        {page === "cockpit" ? <CockpitPage /> : page === "backtester" ? <BacktesterPage /> : <EdgePage />}
+        {page === "cockpit" ? <CockpitPage /> : page === "backtester" ? <BacktesterPage /> : page === "edge" ? <EdgePage /> : <ExitLabPage />}
       </div>
     </div>
   );

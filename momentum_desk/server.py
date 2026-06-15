@@ -329,6 +329,35 @@ async def edge_screen() -> dict:
     return out
 
 
+@app.get("/api/exitlab")
+async def exit_lab() -> dict:
+    """Phase-2 exit-policy lab: same entries, different exits, compared per
+    session. Prefers fresh data/exit_lab_*.json on the volume, falls back to the
+    committed snapshot so the hosted app always shows the latest findings."""
+    snap_path = Path(__file__).parent / "edge" / "exit_snapshot.json"
+    snapshot: dict = {}
+    if snap_path.exists():
+        try:
+            snapshot = json.loads(snap_path.read_text())
+        except Exception:  # noqa: BLE001
+            snapshot = {}
+    out = {"generated": snapshot.get("generated"), "days": snapshot.get("days"),
+           "data": snapshot.get("data"), "slippage": snapshot.get("slippage"),
+           "sessions": {}, "source": "snapshot"}
+    for session in ("premarket", "intraday"):
+        fresh = Path(f"data/exit_lab_{session}.json")
+        if fresh.exists():
+            try:
+                out["sessions"][session] = json.loads(fresh.read_text())
+                out["source"] = "live"
+                continue
+            except Exception:  # noqa: BLE001
+                pass
+        if session in snapshot:
+            out["sessions"][session] = snapshot[session]
+    return out
+
+
 # ---- saved-runs store (persisted on the volume at /app/data) ----
 _RUNS_DIR = Path("data/runs")
 
