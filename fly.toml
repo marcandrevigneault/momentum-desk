@@ -27,6 +27,11 @@ primary_region = "yyz"
     timeout = "5s"
     grace_period = "10s"
 
+# persist the historical-data cache + job results across restarts
+[mounts]
+  source = "momentum_data"
+  destination = "/app/data"
+
 [[vm]]
   size = "shared-cpu-1x"
   memory = "512mb"
