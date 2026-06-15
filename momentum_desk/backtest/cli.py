@@ -33,6 +33,8 @@ def main() -> None:
     ap.add_argument("--no-anti-chase", action="store_true", help="disable the VWAP anti-chase filter")
     ap.add_argument("--session", choices=["regular", "premarket"], default="regular",
                     help="premarket = enter 04:00–09:30 and hold into the open")
+    ap.add_argument("--time-exit", metavar="HH:MM",
+                    help="force flat at this ET time, e.g. 10:30 (the late-morning fade)")
     ap.add_argument("--trades", type=int, default=12, help="how many sample trades to print")
     ap.add_argument("--journal", metavar="PATH", help="write each trade to a JSONL journal for review")
     args = ap.parse_args()
@@ -47,10 +49,14 @@ def main() -> None:
         provider = SyntheticHistory(days=args.days, session=args.session)
         synthetic = True
 
+    time_exit_tod = 0
+    if args.time_exit:
+        hh, mm = args.time_exit.split(":")
+        time_exit_tod = int(hh) * 60 + int(mm)
     bt = BacktestConfig(
         target_r=args.target_r, max_hold_minutes=args.max_hold,
         slippage_pct=args.slippage_pct, use_anti_chase=not args.no_anti_chase,
-        session=args.session,
+        session=args.session, time_exit_tod=time_exit_tod,
     )
     result = Backtester(provider, scan=ScanConfig(), bt=bt).run()
     m = result.metrics

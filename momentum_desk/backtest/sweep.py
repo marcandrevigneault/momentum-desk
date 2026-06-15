@@ -18,10 +18,12 @@ from .data import HistoricalProvider
 from .engine import BacktestConfig, Backtester
 
 # A small, sane default grid. Keep it modest — every combo is a full backtest.
+# time_exit_tod sweeps "where to stop": 0 = no cap, 600 = 10:00, 630 = 10:30 ET
+# (testing the observed late-morning fade of momentum runners).
 DEFAULT_GRID: dict[str, list] = {
     "target_r": [1.5, 2.0, 3.0],
     "stop_buffer_pct": [0.1, 0.3],
-    "max_hold_minutes": [30, 60],
+    "time_exit_tod": [0, 600, 630],
 }
 
 
@@ -187,10 +189,12 @@ def _main() -> None:
 
     rows = sweep(provider, base=base)
     print("  rank by R/trade:")
-    print(f"    {'target_r':>9}{'stop%':>7}{'hold':>6}{'trades':>8}{'win%':>7}{'PF':>7}{'R/trade':>9}")
+    print(f"    {'target_r':>9}{'stop%':>7}{'exit@':>7}{'trades':>8}{'win%':>7}{'PF':>7}{'R/trade':>9}")
     for r in rows:
-        print(f"    {r.params['target_r']:>9}{r.params['stop_buffer_pct']:>7}"
-              f"{r.params['max_hold_minutes']:>6}{r.trades:>8}{r.win_rate:>7.1f}"
+        cap = r.params.get("time_exit_tod", 0)
+        cap_s = "—" if not cap else f"{cap // 60:02d}:{cap % 60:02d}"
+        print(f"    {r.params.get('target_r', 0):>9}{r.params.get('stop_buffer_pct', 0):>7}"
+              f"{cap_s:>7}{r.trades:>8}{r.win_rate:>7.1f}"
               f"{r.profit_factor:>7.2f}{r.expectancy_r:>9.3f}")
 
     wf = walk_forward(provider, folds=args.folds, base=base)

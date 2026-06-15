@@ -214,7 +214,7 @@ async def trades() -> dict:
 
 @app.post("/api/backtest")
 async def backtest(session: str = "premarket", days: int = 60, target_r: float = 2.0,
-                   slippage_pct: float = 0.1, max_hold: int = 60) -> dict:
+                   slippage_pct: float = 0.1, max_hold: int = 60, time_exit_tod: int = 0) -> dict:
     """Run a backtest and return its equity curve, metrics, and trades for the
     visualizer. Uses synthetic data here (the hosted app has no data key), so
     results are an engine illustration, not strategy evidence."""
@@ -229,7 +229,8 @@ async def backtest(session: str = "premarket", days: int = 60, target_r: float =
     def run():
         prov = SyntheticHistory(days=days, session=session)
         bt = BacktestConfig(session=session, target_r=target_r, max_hold_minutes=max_hold,
-                            slippage_pct=slippage_pct, premarket_slippage_pct=slippage_pct)
+                            slippage_pct=slippage_pct, premarket_slippage_pct=slippage_pct,
+                            time_exit_tod=int(time_exit_tod))
         return Backtester(prov, bt=bt).run()
 
     res = await asyncio.to_thread(run)

@@ -41,6 +41,10 @@ class BacktestConfig:
     entry_cutoff_tod: int = 570        # no new entries at/after this ET minute (570 = 09:30)
     premarket_slippage_pct: float = 0.5  # wider — thin pre-market books
     premarket_volume_fraction: float = 0.1  # RVOL baseline: ~10% of daily avg trades pre-market
+    # --- "where to stop": force flat at a wall-clock ET time (0 = disabled) ---
+    # Momentum runners often fade ~10:00–10:30 ET; capping the hold there is a
+    # rule worth measuring (sweep it). 600 = 10:00, 630 = 10:30.
+    time_exit_tod: int = 0
 
 
 class Backtester:
@@ -159,6 +163,9 @@ class Backtester:
             if b.h >= target:
                 exit_idx, exit_px, reason = i, target * (1 - slip), "target"
                 break
+            if self.bt.time_exit_tod and b.tod >= self.bt.time_exit_tod:
+                exit_idx, exit_px, reason = i, b.c * (1 - slip), "time-cap"
+                break
         else:
             exit_idx, exit_px, reason = last_idx, bars[last_idx].c * (1 - slip), "time"
 
@@ -239,6 +246,9 @@ class Backtester:
                 break
             if b.h >= target:
                 exit_t, exit_px, reason = b.t, target * (1 - slip), "target"
+                break
+            if self.bt.time_exit_tod and b.tod >= self.bt.time_exit_tod:
+                exit_t, exit_px, reason = b.t, b.c * (1 - slip), "time-cap"
                 break
             exit_t, exit_px = b.t, b.c * (1 - slip)   # carry a time-exit fallback
 
