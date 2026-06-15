@@ -40,10 +40,12 @@ class _Cache:
 class PolygonAdapter:
     name = "polygon"
 
-    def __init__(self, api_key: str, scan_cfg: ScanConfig | None = None, timeout: float = 8.0) -> None:
+    def __init__(self, api_key: str, scan_cfg: ScanConfig | None = None, timeout: float = 8.0,
+                 max_enrich: int = 40) -> None:
         self._key = api_key
         self._cfg = scan_cfg or ScanConfig()
         self._timeout = timeout
+        self._max_enrich = max_enrich   # cap survivors enriched/poll (bounds first-poll cost)
         self._cache = _Cache({}, {}, {})
         self._universe: list[str] = []
 
@@ -85,8 +87,11 @@ class PolygonAdapter:
             gap = 100.0 * (last - prev_close) / prev_close
             if gap < c.min_gap_pct:
                 continue
-            survivors.append(t)
+            survivors.append((gap, t))
 
+        # enrich only the strongest gappers, to bound API calls per poll
+        survivors.sort(key=lambda x: x[0], reverse=True)
+        survivors = [t for _g, t in survivors[: self._max_enrich]]
         self._universe = [t["ticker"] for t in survivors]
         for t in survivors:
             sym = t["ticker"]
