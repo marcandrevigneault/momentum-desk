@@ -9,6 +9,9 @@ Defaults to the mock feed, so it serves live-looking data with no key.
 from __future__ import annotations
 
 import asyncio
+import base64
+import os
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -68,6 +71,52 @@ class ScannerService:
         return d
 
 
+class BasicAuthMiddleware:
+    """Gate the whole app (HTTP + WebSocket) behind HTTP Basic Auth. Enabled
+    only when DASHBOARD_PASSWORD is set, so local dev stays open. /api/health is
+    exempt so platform health checks can reach it."""
+
+    def __init__(self, app, username: str, password: str) -> None:
+        self.app = app
+        self._username = username
+        self._password = password
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket") or scope.get("path") == "/api/health":
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers") or [])
+        if self._authorized(headers.get(b"authorization")):
+            await self.app(scope, receive, send)
+            return
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+        else:
+            await send({
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"www-authenticate", b'Basic realm="Momentum Desk"'),
+                    (b"content-type", b"text/plain; charset=utf-8"),
+                ],
+            })
+            await send({"type": "http.response.body", "body": b"401 Unauthorized"})
+
+    def _authorized(self, header: bytes | None) -> bool:
+        if not header:
+            return False
+        try:
+            scheme, _, param = header.decode().partition(" ")
+            if scheme.lower() != "basic":
+                return False
+            user, _, pw = base64.b64decode(param).decode().partition(":")
+        except Exception:
+            return False
+        # constant-time compares so we don't leak length/prefix via timing
+        return (secrets.compare_digest(user, self._username)
+                and secrets.compare_digest(pw, self._password))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.service = ScannerService(load_config())
@@ -81,6 +130,15 @@ app = FastAPI(title="Momentum Desk", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+
+# Password protection for public deploys; a no-op locally unless you set the env.
+_DASH_PW = os.environ.get("DASHBOARD_PASSWORD", "")
+if _DASH_PW:
+    app.add_middleware(
+        BasicAuthMiddleware,
+        username=os.environ.get("DASHBOARD_USER", "admin"),
+        password=_DASH_PW,
+    )
 
 
 @app.get("/api/health")

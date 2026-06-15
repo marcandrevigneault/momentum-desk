@@ -1,0 +1,32 @@
+# Fly.io deploy config for the Momentum Desk dashboard.
+# Serves the API + built dashboard from one container (see Dockerfile).
+# Defaults keep it mock + paper; password protection comes from the
+# DASHBOARD_USER / DASHBOARD_PASSWORD secrets (set via `fly secrets set`).
+
+app = "momentum-desk-mav"
+primary_region = "yyz"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # explicit, even though these are the code defaults — no real feed, no live trading
+  PYTHONUNBUFFERED = "1"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0          # scale to zero when idle (it's a personal mock board)
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"            # exempt from auth, returns {"ok": true}
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
