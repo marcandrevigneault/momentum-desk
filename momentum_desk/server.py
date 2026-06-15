@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 import secrets
 import time
@@ -239,7 +240,7 @@ async def backtest(session: str = "premarket", days: int = 60, target_r: float =
 
     res = await asyncio.to_thread(run)
     bd = breakdowns(res.trades)
-    return {
+    out = {
         "synthetic": True,
         "session": session,
         "days": res.days,
@@ -249,14 +250,15 @@ async def backtest(session: str = "premarket", days: int = 60, target_r: float =
         "monthly": bd["monthly"],
         "yearly": bd["yearly"],
     }
+    _save_run("synthetic", {"session": session, "days": days, "target_r": target_r,
+                            "time_exit_tod": time_exit_tod}, out)
+    return out
 
 
 @app.get("/api/realrun")
 async def realrun() -> dict:
     """Serve the latest local multi-year real-data run (scripts/realrun.py
     writes data/realrun.json). Absent on the hosted app — real runs are local."""
-    import json
-
     p = Path("data/realrun.json")
     if not p.exists():
         return {"available": False}
@@ -264,6 +266,71 @@ async def realrun() -> dict:
         return {"available": True, **json.loads(p.read_text())}
     except Exception:  # noqa: BLE001
         return {"available": False}
+
+
+# ---- saved-runs store (persisted on the volume at /app/data) ----
+_RUNS_DIR = Path("data/runs")
+
+
+def _save_run(kind: str, params: dict, result: dict) -> str:
+    _RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    rid = f"{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    rec = {"id": rid, "ts": time.time(), "kind": kind, "params": params, "result": result}
+    (_RUNS_DIR / f"{rid}.json").write_text(json.dumps(rec))
+    # keep the store bounded: newest 60
+    for old in sorted(_RUNS_DIR.glob("*.json"))[:-60]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    return rid
+
+
+def _run_summary(rec: dict) -> dict:
+    r, m, p = rec.get("result", {}), rec.get("result", {}).get("metrics", {}), rec.get("params", {})
+    return {
+        "id": rec["id"], "ts": rec.get("ts", 0), "kind": rec.get("kind", "?"),
+        "synthetic": r.get("synthetic"), "session": r.get("session"), "days": r.get("days"),
+        "trades": m.get("trades"), "expectancy_r": m.get("expectancy_r"),
+        "total_pnl": m.get("total_pnl"), "max_drawdown_pct": m.get("max_drawdown_pct"),
+        "target_r": p.get("target_r"), "time_exit_tod": p.get("time_exit_tod"),
+    }
+
+
+@app.get("/api/backtest/runs")
+async def list_runs() -> dict:
+    runs = []
+    if _RUNS_DIR.is_dir():
+        for f in sorted(_RUNS_DIR.glob("*.json"), reverse=True)[:60]:
+            try:
+                runs.append(_run_summary(json.loads(f.read_text())))
+            except Exception:  # noqa: BLE001
+                pass
+    # surface a local multi-year realrun.json as a pinned entry, if present
+    rr = Path("data/realrun.json")
+    if rr.exists():
+        try:
+            d = json.loads(rr.read_text())
+            m, bp = d.get("metrics", {}), d.get("best_params", {})
+            runs.append({"id": "realrun", "ts": 0, "kind": "real-sweep", "synthetic": False,
+                         "session": d.get("session"), "days": d.get("days"),
+                         "trades": m.get("trades"), "expectancy_r": m.get("expectancy_r"),
+                         "total_pnl": m.get("total_pnl"), "max_drawdown_pct": m.get("max_drawdown_pct"),
+                         "target_r": bp.get("target_r"), "time_exit_tod": bp.get("time_exit_tod")})
+        except Exception:  # noqa: BLE001
+            pass
+    return {"runs": runs}
+
+
+@app.get("/api/backtest/runs/{rid}")
+async def get_run(rid: str) -> dict:
+    if rid == "realrun":
+        rr = Path("data/realrun.json")
+        return {"result": json.loads(rr.read_text())} if rr.exists() else {"result": None}
+    f = _RUNS_DIR / f"{rid}.json"
+    if f.exists():
+        return {"result": json.loads(f.read_text()).get("result")}
+    return {"result": None}
 
 
 def _massive_key() -> str:
@@ -302,6 +369,7 @@ async def _job_worker(job_id: str, params: dict) -> None:
     try:
         job["result"] = await asyncio.to_thread(_run_real_backtest, params)
         job["status"] = "done"
+        _save_run("real", params, job["result"])
     except Exception as e:  # noqa: BLE001
         job["status"] = "error"
         job["error"] = str(e)

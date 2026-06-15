@@ -109,6 +109,21 @@ export interface PeriodRow {
   cum_pnl: number;
 }
 
+export interface RunSummary {
+  id: string;
+  ts: number;
+  kind: string;
+  synthetic?: boolean;
+  session?: string;
+  days?: number;
+  trades?: number;
+  expectancy_r?: number;
+  total_pnl?: number;
+  max_drawdown_pct?: number;
+  target_r?: number;
+  time_exit_tod?: number;
+}
+
 export interface BacktestRun {
   synthetic: boolean;
   session: string;
