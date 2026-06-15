@@ -9,12 +9,12 @@ is too big for the tape, i.e. when you would become the exit liquidity.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from .models import Snapshot
 
 
-class Verdict(str, Enum):
+class Verdict(StrEnum):
     OK = "ok"
     REJECTED = "rejected"
 
@@ -74,7 +74,9 @@ class RiskEngine:
             reasons.append("stop must be below entry (long-only sizing)")
             return PositionPlan(snap.symbol, Verdict.REJECTED, 0, entry, stop, 0.0, reasons)
         if stop_dist_pct < c.min_stop_distance_pct:
-            reasons.append(f"stop too tight ({stop_dist_pct:.1f}% < {c.min_stop_distance_pct}%) — noise will stop you out")
+            reasons.append(
+                f"stop too tight ({stop_dist_pct:.1f}% < {c.min_stop_distance_pct}%) — noise will stop you out"
+            )
 
         risk_dollars = c.account_equity * c.max_risk_per_trade_pct / 100.0
         shares = int(risk_dollars / stop_dist)

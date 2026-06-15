@@ -1,5 +1,5 @@
-from .data import BacktestResult, DayCandidate, MinuteBar, Metrics, Trade
-from .engine import Backtester, BacktestConfig
+from .data import BacktestResult, DayCandidate, Metrics, MinuteBar, Trade
+from .engine import BacktestConfig, Backtester
 from .providers import PolygonHistory, SyntheticHistory
 
 __all__ = [

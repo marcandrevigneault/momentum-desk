@@ -6,7 +6,7 @@ scanner's anti-chase flags, and the backtest metrics math.
 """
 from __future__ import annotations
 
-from momentum_desk.backtest import Backtester, BacktestConfig, SyntheticHistory
+from momentum_desk.backtest import BacktestConfig, Backtester, SyntheticHistory
 from momentum_desk.models import Flag, Snapshot
 from momentum_desk.risk import RiskConfig, RiskEngine
 from momentum_desk.scanner import ScanConfig, ScannerEngine

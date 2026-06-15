@@ -14,7 +14,7 @@ import argparse
 import os
 
 from ..scanner import ScanConfig
-from .engine import Backtester, BacktestConfig
+from .engine import BacktestConfig, Backtester
 from .providers import PolygonHistory, SyntheticHistory
 
 
@@ -60,12 +60,13 @@ def main() -> None:
         return
 
     pnl_color = "+" if m.total_pnl >= 0 else ""
+    start_eq = result.starting_equity
     print(f"  trades            {m.trades}   ({result.skipped_no_entry} candidates filtered/no-trigger)")
     print(f"  win rate          {m.win_rate:.1f}%   {_bar(m.win_rate / 100 * 24)}")
     print(f"  avg win / loss    +${m.avg_win:,.0f}  /  ${m.avg_loss:,.0f}")
     print(f"  profit factor     {m.profit_factor:.2f}   (gross win ${m.gross_profit:,.0f} / loss ${m.gross_loss:,.0f})")
     print(f"  expectancy        {pnl_color}${m.expectancy:,.2f}/trade   ({m.expectancy_r:+.3f} R/trade)")
-    print(f"  total P&L         {pnl_color}${m.total_pnl:,.2f}   ({m.return_pct:+.2f}% on ${result.starting_equity:,.0f})")
+    print(f"  total P&L         {pnl_color}${m.total_pnl:,.2f}   ({m.return_pct:+.2f}% on ${start_eq:,.0f})")
     print(f"  max drawdown      ${m.max_drawdown:,.2f}   ({m.max_drawdown_pct:.2f}%)")
 
     verdict = ("POSITIVE expectancy" if m.expectancy_r > 0 else "NEGATIVE expectancy")

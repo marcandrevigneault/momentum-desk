@@ -20,9 +20,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..models import Snapshot
-from ..risk import RiskEngine, RiskConfig
+from ..risk import RiskConfig, RiskEngine
 from ..scanner import ScanConfig
-from .data import BacktestResult, DayCandidate, HistoricalProvider, Metrics, MinuteBar, Trade
+from .data import BacktestResult, DayCandidate, HistoricalProvider, Metrics, Trade
 
 
 @dataclass

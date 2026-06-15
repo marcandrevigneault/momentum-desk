@@ -7,8 +7,7 @@ consume `Order`s. Pure stdlib — the core runs with no third-party deps.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 
 @dataclass
@@ -22,7 +21,7 @@ class Snapshot:
     vwap: float                 # session volume-weighted average price
     cum_volume: int             # shares traded so far today
     avg_volume_20d: float       # 20-day average daily volume (relative-volume baseline)
-    float_shares: Optional[float] = None   # tradable float, shares (None = unknown)
+    float_shares: float | None = None   # tradable float, shares (None = unknown)
     halted: bool = False
     has_news: bool = False
     news_headline: str = ""
@@ -56,11 +55,11 @@ class Snapshot:
         return self.cum_volume / self.avg_volume_20d
 
     @property
-    def float_millions(self) -> Optional[float]:
+    def float_millions(self) -> float | None:
         return None if self.float_shares is None else self.float_shares / 1e6
 
 
-class Flag(str, Enum):
+class Flag(StrEnum):
     """Why a candidate is risky or disqualified — surfaced to the trader."""
 
     EXTENDED = "extended_above_vwap"        # already ran; chasing = exit liquidity
@@ -81,7 +80,7 @@ class Signal:
     gap_pct: float
     relative_volume: float
     extension_above_vwap_pct: float
-    float_millions: Optional[float]
+    float_millions: float | None
     has_news: bool
     news_headline: str
     flags: list[Flag] = field(default_factory=list)
