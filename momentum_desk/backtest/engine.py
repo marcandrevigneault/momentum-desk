@@ -61,15 +61,20 @@ class Backtester:
         self.bt = bt or BacktestConfig()
 
     # ---------- public ----------
-    def run(self) -> BacktestResult:
+    def run(self, on_progress=None) -> BacktestResult:
+        """on_progress(fraction) is called per day — a good proxy for a real
+        run's fetch progress, since each day triggers its data pulls."""
         risk = RiskEngine(self.risk_cfg)
         equity = self.risk_cfg.account_equity
         curve = [equity]
         trades: list[Trade] = []
         skipped = 0
         days = self.provider.trading_days()
+        n_days = len(days)
 
-        for day in days:
+        for di, day in enumerate(days):
+            if on_progress is not None:
+                on_progress((di + 1) / n_days if n_days else 1.0)
             risk.realized_pnl_today = 0.0  # fresh circuit breaker each session
             cands = sorted(self.provider.candidates(day), key=lambda c: c.gap_pct, reverse=True)
             for cand in cands:

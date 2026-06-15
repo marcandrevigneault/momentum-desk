@@ -333,11 +333,34 @@ async def get_run(rid: str) -> dict:
     return {"result": None}
 
 
+@app.delete("/api/backtest/runs/{rid}")
+async def delete_run(rid: str) -> dict:
+    f = _RUNS_DIR / f"{rid}.json"
+    if rid != "realrun" and f.exists():
+        f.unlink()
+        return {"ok": True}
+    return {"ok": False}
+
+
+@app.get("/api/backtest/jobs")
+async def list_jobs() -> dict:
+    """All known jobs (running + recently finished) for the live panel."""
+    jobs = []
+    for jid, j in app.state.jobs.items():
+        jobs.append({
+            "id": jid, "status": j["status"], "elapsed": round(time.time() - j["started"], 1),
+            "progress": round(j.get("progress", 0.0), 3), "params": j["params"],
+            "error": j.get("error"),
+        })
+    jobs.sort(key=lambda x: x["elapsed"])
+    return {"jobs": jobs}
+
+
 def _massive_key() -> str:
     return os.environ.get("POLYGON_API_KEY", "") or load_config().polygon_api_key
 
 
-def _run_real_backtest(p: dict) -> dict:
+def _run_real_backtest(p: dict, on_progress=None) -> dict:
     """Blocking: a real Massive-data backtest. Runs in a worker thread. First
     multi-year run fetches a lot (cached to disk after); re-runs replay fast."""
     from dataclasses import asdict
@@ -355,7 +378,7 @@ def _run_real_backtest(p: dict) -> dict:
     bt = BacktestConfig(session=p["session"], target_r=p["target_r"], max_hold_minutes=p["max_hold"],
                         slippage_pct=p["slippage_pct"], premarket_slippage_pct=p["slippage_pct"],
                         time_exit_tod=p["time_exit_tod"])
-    res = Backtester(prov, scan=scan, bt=bt).run()
+    res = Backtester(prov, scan=scan, bt=bt).run(on_progress=on_progress)
     bd = breakdowns(res.trades)
     return {
         "synthetic": False, "feed": "massive", "session": p["session"], "days": res.days,
@@ -364,15 +387,27 @@ def _run_real_backtest(p: dict) -> dict:
     }
 
 
+_MAX_CONCURRENT_JOBS = 3
+
+
 async def _job_worker(job_id: str, params: dict) -> None:
     job = app.state.jobs[job_id]
+
+    def on_progress(frac: float) -> None:
+        job["progress"] = frac
+
     try:
-        job["result"] = await asyncio.to_thread(_run_real_backtest, params)
+        job["result"] = await asyncio.to_thread(_run_real_backtest, params, on_progress)
         job["status"] = "done"
+        job["progress"] = 1.0
         _save_run("real", params, job["result"])
     except Exception as e:  # noqa: BLE001
         job["status"] = "error"
         job["error"] = str(e)
+    # drop the oldest finished jobs so the registry doesn't grow forever
+    finished = [k for k, v in app.state.jobs.items() if v["status"] != "running"]
+    for k in sorted(finished, key=lambda k: app.state.jobs[k]["started"])[:-20]:
+        app.state.jobs.pop(k, None)
 
 
 @app.post("/api/backtest/launch")
@@ -380,9 +415,14 @@ async def backtest_launch(session: str = "premarket", days: int = 252, target_r:
                           slippage_pct: float = 0.5, max_hold: int = 60, time_exit_tod: int = 630,
                           min_rvol: float = 3.0, max_candidates: int = 8) -> dict:
     """Kick off a REAL Massive-data backtest in the background (so a multi-year
-    run doesn't time out the request). Poll /api/backtest/job/{id}."""
+    run doesn't time out the request). Concurrent runs allowed up to a cap.
+    Poll /api/backtest/job/{id} or the panel via /api/backtest/jobs."""
     if not _massive_key():
         return {"ok": False, "error": "no Massive key configured on the server"}
+    running = sum(1 for j in app.state.jobs.values() if j["status"] == "running")
+    if running >= _MAX_CONCURRENT_JOBS:
+        return {"ok": False,
+                "error": f"{running} running (max {_MAX_CONCURRENT_JOBS}) — wait for one to finish"}
     params = {
         "session": "premarket" if session == "premarket" else "regular",
         "days": max(5, min(int(days), 1300)),   # up to ~5y
@@ -392,7 +432,7 @@ async def backtest_launch(session: str = "premarket", days: int = 252, target_r:
     }
     job_id = uuid.uuid4().hex[:12]
     app.state.jobs[job_id] = {"status": "running", "params": params, "started": time.time(),
-                              "result": None, "error": None}
+                              "result": None, "error": None, "progress": 0.0}
     asyncio.create_task(_job_worker(job_id, params))
     return {"ok": True, "job_id": job_id, "params": params}
 
