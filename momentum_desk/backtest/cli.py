@@ -32,6 +32,7 @@ def main() -> None:
     ap.add_argument("--slippage-pct", type=float, default=0.1)
     ap.add_argument("--no-anti-chase", action="store_true", help="disable the VWAP anti-chase filter")
     ap.add_argument("--trades", type=int, default=12, help="how many sample trades to print")
+    ap.add_argument("--journal", metavar="PATH", help="write each trade to a JSONL journal for review")
     args = ap.parse_args()
 
     if args.polygon:
@@ -50,6 +51,13 @@ def main() -> None:
     )
     result = Backtester(provider, scan=ScanConfig(), bt=bt).run()
     m = result.metrics
+
+    if args.journal:
+        from ..journal import Journal
+        j = Journal(args.journal)
+        for t in result.trades:
+            j.log_fill(t)
+        print(f"wrote {len(result.trades)} trades to {args.journal}")
 
     print(f"\nMomentum Desk · backtest · feed={provider.name} · {result.days} days")
     if synthetic:
