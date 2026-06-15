@@ -164,6 +164,7 @@ export default function BacktesterPage() {
         <Field label="Session">
           <select className={inputCls} style={inputStyle} value={session} onChange={(e) => setSession(e.target.value)}>
             <option value="premarket">pre-market (4:00–9:30, hold into open)</option>
+            <option value="intraday">intraday (post-open HOD momentum)</option>
             <option value="regular">regular hours</option>
           </select>
         </Field>
