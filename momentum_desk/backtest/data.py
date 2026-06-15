@@ -35,9 +35,12 @@ class DayCandidate:
 @dataclass
 class MinuteBar:
     """One intraday minute. `cum_volume` and `vwap` are running session totals
-    up to and including this bar — i.e. exactly what's knowable in real time."""
+    up to and including this bar — i.e. exactly what's knowable in real time.
+    `tod` is the bar's time-of-day in ET minutes from midnight (240 = 04:00,
+    570 = 09:30), so the engine can separate the pre-market window from the
+    regular session."""
 
-    t: int                   # minutes since the session open (0 = first bar)
+    t: int                   # minutes since the first bar (0 = first)
     o: float
     h: float
     l: float
@@ -45,6 +48,11 @@ class MinuteBar:
     v: int                   # this bar's volume
     cum_volume: int          # session volume through this bar
     vwap: float              # session VWAP through this bar
+    tod: int = 570           # ET minute-of-day (default 09:30 = regular open)
+
+
+MARKET_OPEN_TOD = 570        # 09:30 ET
+PREMARKET_OPEN_TOD = 240     # 04:00 ET
 
 
 @dataclass

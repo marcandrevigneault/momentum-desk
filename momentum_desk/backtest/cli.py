@@ -31,6 +31,8 @@ def main() -> None:
     ap.add_argument("--max-hold", type=int, default=60)
     ap.add_argument("--slippage-pct", type=float, default=0.1)
     ap.add_argument("--no-anti-chase", action="store_true", help="disable the VWAP anti-chase filter")
+    ap.add_argument("--session", choices=["regular", "premarket"], default="regular",
+                    help="premarket = enter 04:00–09:30 and hold into the open")
     ap.add_argument("--trades", type=int, default=12, help="how many sample trades to print")
     ap.add_argument("--journal", metavar="PATH", help="write each trade to a JSONL journal for review")
     args = ap.parse_args()
@@ -42,12 +44,13 @@ def main() -> None:
         provider = PolygonHistory(key, days=args.days)
         synthetic = False
     else:
-        provider = SyntheticHistory(days=args.days)
+        provider = SyntheticHistory(days=args.days, session=args.session)
         synthetic = True
 
     bt = BacktestConfig(
         target_r=args.target_r, max_hold_minutes=args.max_hold,
         slippage_pct=args.slippage_pct, use_anti_chase=not args.no_anti_chase,
+        session=args.session,
     )
     result = Backtester(provider, scan=ScanConfig(), bt=bt).run()
     m = result.metrics
@@ -78,9 +81,9 @@ def main() -> None:
     print(f"  max drawdown      ${m.max_drawdown:,.2f}   ({m.max_drawdown_pct:.2f}%)")
 
     verdict = ("POSITIVE expectancy" if m.expectancy_r > 0 else "NEGATIVE expectancy")
-    print(f"\n  → {verdict} at {args.target_r:.0f}R target, "
-          f"{'anti-chase ON' if bt.use_anti_chase else 'anti-chase OFF'}, "
-          f"{args.slippage_pct}% slippage.")
+    sess = "premarket (enter 04:00–09:30, hold into open)" if args.session == "premarket" else "regular hours"
+    print(f"\n  → {verdict} · {sess} · {args.target_r:.0f}R target · "
+          f"{'anti-chase ON' if bt.use_anti_chase else 'anti-chase OFF'}.")
 
     print(f"\n  sample trades (first {args.trades}):")
     print(f"    {'day':<11}{'sym':<6}{'entry':>8}{'exit':>8}{'shares':>8}{'reason':>9}{'R':>7}{'P&L':>10}")

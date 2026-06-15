@@ -166,6 +166,7 @@ def _main() -> None:
     ap.add_argument("--polygon", action="store_true")
     ap.add_argument("--days", type=int, default=60)
     ap.add_argument("--folds", type=int, default=4)
+    ap.add_argument("--session", choices=["regular", "premarket"], default="regular")
     args = ap.parse_args()
 
     if args.polygon:
@@ -175,15 +176,16 @@ def _main() -> None:
         provider = PolygonHistory(key, days=args.days)
         synthetic = False
     else:
-        provider = SyntheticHistory(days=args.days)
+        provider = SyntheticHistory(days=args.days, session=args.session)
         synthetic = True
 
-    print(f"\nMomentum Desk · sweep · feed={provider.name} · {args.days} days")
+    base = BacktestConfig(session=args.session)
+    print(f"\nMomentum Desk · sweep · feed={provider.name} · {args.days} days · {args.session}")
     if synthetic:
         print("⚠ SYNTHETIC DATA — engine test only; these numbers are not strategy evidence.")
     print("─" * 70)
 
-    rows = sweep(provider)
+    rows = sweep(provider, base=base)
     print("  rank by R/trade:")
     print(f"    {'target_r':>9}{'stop%':>7}{'hold':>6}{'trades':>8}{'win%':>7}{'PF':>7}{'R/trade':>9}")
     for r in rows:
@@ -191,7 +193,7 @@ def _main() -> None:
               f"{r.params['max_hold_minutes']:>6}{r.trades:>8}{r.win_rate:>7.1f}"
               f"{r.profit_factor:>7.2f}{r.expectancy_r:>9.3f}")
 
-    wf = walk_forward(provider, folds=args.folds)
+    wf = walk_forward(provider, folds=args.folds, base=base)
     print("\n  walk-forward (best-on-past, scored-on-unseen-future):")
     print(f"    {'train':>6}{'test':>6}{'IS R':>8}{'OOS R':>8}{'OOS trades':>12}  best params")
     for f in wf.folds:

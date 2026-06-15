@@ -12,9 +12,18 @@ from __future__ import annotations
 
 import datetime as dt
 import random
+from zoneinfo import ZoneInfo
 
-from .data import DayCandidate, MinuteBar
+from .data import MARKET_OPEN_TOD, PREMARKET_OPEN_TOD, DayCandidate, MinuteBar
 from .http import CachedClient
+
+_ET = ZoneInfo("America/New_York")
+
+
+def _et_minute(epoch_ms: int) -> int:
+    """Bar timestamp (ms UTC) → ET minute-of-day, DST-aware (240 = 04:00)."""
+    d = dt.datetime.fromtimestamp(epoch_ms / 1000, tz=dt.UTC).astimezone(_ET)
+    return d.hour * 60 + d.minute
 
 _HEADLINES = [
     "announces positive trial data", "signs distribution agreement",
@@ -28,10 +37,11 @@ class SyntheticHistory:
 
     name = "synthetic"
 
-    def __init__(self, days: int = 40, seed: int = 11) -> None:
+    def __init__(self, days: int = 40, seed: int = 11, session: str = "regular") -> None:
         self._rng = random.Random(seed)
         self._days = self._make_days(days)
         self._pool = ["GNSX", "BHAT", "ATNF", "CEAD", "VRPX", "TOPS", "MULN", "NAOV", "GROM", "COSM"]
+        self._session = session   # "regular" (09:30 on) | "premarket" (04:00 → into the open)
         self._cand_cache: dict[str, list[DayCandidate]] = {}
         self._min_cache: dict[tuple[str, str], list[MinuteBar]] = {}
 
@@ -81,24 +91,31 @@ class SyntheticHistory:
         drift = rng.uniform(0.0008, 0.004) if roll < 0.42 else -rng.uniform(0.0005, 0.0035)
         vol = rng.uniform(0.006, 0.018)
 
+        # premarket sessions run 04:00→~10:30 ET (390 bars) so an entry before
+        # 09:30 can be held into the open; regular sessions are 09:30 + 90 min.
+        premarket = self._session == "premarket"
+        start_tod = PREMARKET_OPEN_TOD if premarket else MARKET_OPEN_TOD
+        n_bars = 390 if premarket else 90
+        # thinner volume + wider noise before the open, like a real pre-market book
+        vol *= 1.6 if premarket else 1.0
+
         price = cand.day_open
-        # a real gapper has already traded multiples of its daily average by the
-        # open (premarket), and keeps printing heavy volume — that's what makes
-        # RVOL high. Seed and accrue accordingly.
         cum_v = int(cand.avg_volume_20d * rng.uniform(3.0, 9.0))
         pv = price * cum_v
         bars: list[MinuteBar] = []
-        for t in range(90):  # ~first 90 minutes
+        for t in range(n_bars):
+            tod = start_tod + t
             o = price
             ret = rng.gauss(drift, vol)
             c = max(0.05, o * (1 + ret))
             hi = max(o, c) * (1 + abs(rng.gauss(0, 0.004)))
             lo = min(o, c) * (1 - abs(rng.gauss(0, 0.004)))
-            bv = int(max(2000, rng.gauss(cand.avg_volume_20d / 40, cand.avg_volume_20d / 80)))
+            per_bar = cand.avg_volume_20d / (120 if premarket and tod < MARKET_OPEN_TOD else 40)
+            bv = int(max(1000, rng.gauss(per_bar, per_bar / 2)))
             cum_v += bv
             pv += c * bv
             bars.append(MinuteBar(t=t, o=round(o, 4), h=round(hi, 4), l=round(lo, 4),
-                                  c=round(c, 4), v=bv, cum_volume=cum_v, vwap=round(pv / cum_v, 4)))
+                                  c=round(c, 4), v=bv, cum_volume=cum_v, vwap=round(pv / cum_v, 4), tod=tod))
             price = c
         self._min_cache[key] = bars
         return bars
@@ -112,10 +129,13 @@ class PolygonHistory:
 
     def __init__(self, api_key: str, days: int = 30, min_gap_pct: float = 10.0,
                  min_price: float = 1.0, max_price: float = 20.0,
-                 cache_dir: str = "data/cache/polygon", max_per_min: float = 5) -> None:
+                 cache_dir: str = "data/cache/polygon", max_per_min: float = 5,
+                 fetch_news: bool = True, max_candidates_per_day: int = 25) -> None:
         self._n = days
         self._min_gap = min_gap_pct
         self._min_price, self._max_price = min_price, max_price
+        self._fetch_news = fetch_news
+        self._max_candidates = max_candidates_per_day
         self._grouped: dict[str, dict] = {}   # day -> {sym: bar}
         self._avg_cache: dict[str, float] = {}
         # cached + throttled HTTP so sweeps replay from disk and we never get
@@ -151,7 +171,7 @@ class PolygonHistory:
         if prior is None:
             return []
         today, yday = self._grouped_day(day), self._grouped_day(prior)
-        out = []
+        rows = []
         for sym, bar in today.items():
             prev = yday.get(sym)
             if not prev:
@@ -162,13 +182,37 @@ class PolygonHistory:
             gap = 100.0 * (day_open - prev_close) / prev_close
             if gap < self._min_gap:
                 continue
+            rows.append((gap, sym, prev_close, day_open, prev.get("v", 0) or 1))
+        # bound enrichment (news) to the strongest gappers
+        rows.sort(reverse=True)
+        out = []
+        for _gap, sym, prev_close, day_open, vol in rows[: self._max_candidates]:
+            has_news, headline = self._premarket_news(sym, day) if self._fetch_news else (False, "")
             out.append(DayCandidate(
                 symbol=sym, day=day, prev_close=prev_close, day_open=day_open,
-                avg_volume_20d=prev.get("v", 0) or 1,  # prior-day volume proxy; refine w/ 20d aggs
-                float_shares=None,   # shares-outstanding lookup omitted in batch backtest
-                has_news=False,      # point-in-time news backfill is a separate pass
+                avg_volume_20d=vol,   # prior-day volume proxy; refine w/ 20d aggs
+                float_shares=None,    # shares-outstanding (≈float) lookup omitted in batch backtest
+                has_news=has_news, news_headline=headline,
             ))
         return out
+
+    def _premarket_news(self, sym: str, day: str) -> tuple[bool, str]:
+        """A catalyst counts only if published before that day's 09:30 ET open
+        (point-in-time — no peeking at intraday news)."""
+        y, m, d = (int(x) for x in day.split("-"))
+        open_utc = dt.datetime(y, m, d, 9, 30, tzinfo=_ET).astimezone(dt.UTC)
+        try:
+            r = self._get("/v2/reference/news", {
+                "ticker": sym, "order": "desc", "limit": 1,
+                "published_utc.lte": open_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "published_utc.gte": f"{day}T00:00:00Z",
+            })
+            res = r.get("results") or []
+            if res:
+                return True, res[0].get("title", "")
+        except Exception:  # noqa: BLE001
+            pass
+        return False, ""
 
     def minutes(self, symbol: str, day: str) -> list[MinuteBar]:
         try:
@@ -177,9 +221,11 @@ class PolygonHistory:
         except Exception as e:  # noqa: BLE001
             print(f"[polygon-history] minutes {symbol} {day} failed: {e}")
             return []
-        results = r.get("results") or []
         bars, cum_v, pv, t0 = [], 0, 0.0, None
-        for i, b in enumerate(results):
+        for b in r.get("results") or []:
+            tod = _et_minute(b["t"])
+            if tod < PREMARKET_OPEN_TOD or tod > 660:   # keep 04:00 → 11:00 ET
+                continue
             if t0 is None:
                 t0 = b["t"]
             cum_v += int(b.get("v", 0))
@@ -187,7 +233,6 @@ class PolygonHistory:
             bars.append(MinuteBar(
                 t=int((b["t"] - t0) / 60000), o=b["o"], h=b["h"], l=b["l"], c=b["c"],
                 v=int(b.get("v", 0)), cum_volume=cum_v, vwap=round(pv / cum_v, 4) if cum_v else b["c"],
+                tod=tod,
             ))
-            if i > 120:  # first ~2h is plenty for an opening-range strategy
-                break
         return bars
