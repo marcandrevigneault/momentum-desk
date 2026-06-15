@@ -1,0 +1,377 @@
+{
+  "generated": "2026-06-15",
+  "days": 120,
+  "data": "polygon",
+  "slippage": 0.3,
+  "premarket": {
+    "session": "premarket",
+    "n_events": 1314,
+    "policies": [
+      {
+        "policy": "time_only",
+        "desc": "Hold to the time cap; initial stop only (no target).",
+        "n": 1314,
+        "expectancy_r": 0.8181,
+        "win_rate": 0.4049,
+        "profit_factor": 2.575,
+        "avg_win_r": 3.3032,
+        "avg_loss_r": -0.8726,
+        "median_r": -0.4856,
+        "best_r": 70.9634,
+        "worst_r": -1.2925,
+        "max_dd_r": 71.326,
+        "avg_hold_bars": 139.6,
+        "exit_reasons": {
+          "stop": 563,
+          "time": 751
+        }
+      },
+      {
+        "policy": "pct_trail_10",
+        "desc": "Ratchet a stop 10% below the high-water mark.",
+        "n": 1314,
+        "expectancy_r": 0.6936,
+        "win_rate": 0.4764,
+        "profit_factor": 3.258,
+        "avg_win_r": 2.1006,
+        "avg_loss_r": -0.5867,
+        "median_r": -0.0378,
+        "best_r": 33.9342,
+        "worst_r": -1.2685,
+        "max_dd_r": 17.649,
+        "avg_hold_bars": 49.7,
+        "exit_reasons": {
+          "trail": 999,
+          "time": 138,
+          "stop": 177
+        }
+      },
+      {
+        "policy": "fixed_3r",
+        "desc": "Hard stop + take profit at +3R.",
+        "n": 1314,
+        "expectancy_r": 0.504,
+        "win_rate": 0.4665,
+        "profit_factor": 2.099,
+        "avg_win_r": 2.0635,
+        "avg_loss_r": -0.8598,
+        "median_r": -0.1537,
+        "best_r": 2.9853,
+        "worst_r": -1.2685,
+        "max_dd_r": 38.912,
+        "avg_hold_bars": 104.8,
+        "exit_reasons": {
+          "target": 363,
+          "time": 457,
+          "stop": 494
+        }
+      },
+      {
+        "policy": "vwap_loss",
+        "desc": "Exit on the first close back below session VWAP.",
+        "n": 1314,
+        "expectancy_r": 0.4507,
+        "win_rate": 0.3721,
+        "profit_factor": 2.516,
+        "avg_win_r": 2.0098,
+        "avg_loss_r": -0.4734,
+        "median_r": -0.2162,
+        "best_r": 29.2889,
+        "worst_r": -1.2685,
+        "max_dd_r": 24.723,
+        "avg_hold_bars": 28.7,
+        "exit_reasons": {
+          "vwap": 1172,
+          "time": 31,
+          "stop": 111
+        }
+      },
+      {
+        "policy": "atr_trail_3",
+        "desc": "Trail a stop 3\u00d7ATR below the high-water mark.",
+        "n": 1314,
+        "expectancy_r": 0.3882,
+        "win_rate": 0.4566,
+        "profit_factor": 2.923,
+        "avg_win_r": 1.2922,
+        "avg_loss_r": -0.3715,
+        "median_r": -0.0611,
+        "best_r": 36.1525,
+        "worst_r": -1.2685,
+        "max_dd_r": 10.457,
+        "avg_hold_bars": 14.4,
+        "exit_reasons": {
+          "trail": 1288,
+          "time": 13,
+          "stop": 13
+        }
+      },
+      {
+        "policy": "atr_trail_2",
+        "desc": "Trail a stop 2\u00d7ATR below the high-water mark.",
+        "n": 1314,
+        "expectancy_r": 0.3861,
+        "win_rate": 0.4566,
+        "profit_factor": 3.542,
+        "avg_win_r": 1.1781,
+        "avg_loss_r": -0.2795,
+        "median_r": -0.0466,
+        "best_r": 21.3754,
+        "worst_r": -1.2685,
+        "max_dd_r": 6.512,
+        "avg_hold_bars": 6.7,
+        "exit_reasons": {
+          "trail": 1307,
+          "time": 4,
+          "stop": 3
+        }
+      },
+      {
+        "policy": "fixed_2r",
+        "desc": "Hard stop + take profit at +2R.",
+        "n": 1314,
+        "expectancy_r": 0.3785,
+        "win_rate": 0.5023,
+        "profit_factor": 1.894,
+        "avg_win_r": 1.5962,
+        "avg_loss_r": -0.8503,
+        "median_r": 0.0114,
+        "best_r": 1.9895,
+        "worst_r": -1.2685,
+        "max_dd_r": 35.092,
+        "avg_hold_bars": 92.6,
+        "exit_reasons": {
+          "target": 503,
+          "time": 361,
+          "stop": 450
+        }
+      },
+      {
+        "policy": "structure_trail",
+        "desc": "Trail to the lowest low of the last 5 bars.",
+        "n": 1314,
+        "expectancy_r": 0.3642,
+        "win_rate": 0.4163,
+        "profit_factor": 3.103,
+        "avg_win_r": 1.2909,
+        "avg_loss_r": -0.2967,
+        "median_r": -0.0414,
+        "best_r": 30.5704,
+        "worst_r": -1.2685,
+        "max_dd_r": 13.63,
+        "avg_hold_bars": 5.2,
+        "exit_reasons": {
+          "trail": 1248,
+          "stop": 66
+        }
+      },
+      {
+        "policy": "fixed_2r_vwap",
+        "desc": "+2R target, but also bail on a close below VWAP.",
+        "n": 1314,
+        "expectancy_r": 0.1631,
+        "win_rate": 0.3805,
+        "profit_factor": 1.56,
+        "avg_win_r": 1.1944,
+        "avg_loss_r": -0.4703,
+        "median_r": -0.2061,
+        "best_r": 1.9895,
+        "worst_r": -1.2685,
+        "max_dd_r": 40.984,
+        "avg_hold_bars": 22.5,
+        "exit_reasons": {
+          "target": 269,
+          "vwap": 920,
+          "time": 19,
+          "stop": 106
+        }
+      }
+    ]
+  },
+  "intraday": {
+    "session": "intraday",
+    "n_events": 1357,
+    "policies": [
+      {
+        "policy": "time_only",
+        "desc": "Hold to the time cap; initial stop only (no target).",
+        "n": 1357,
+        "expectancy_r": 1.0076,
+        "win_rate": 0.5055,
+        "profit_factor": 3.366,
+        "avg_win_r": 2.8358,
+        "avg_loss_r": -0.8614,
+        "median_r": 0.0217,
+        "best_r": 81.4804,
+        "worst_r": -1.6208,
+        "max_dd_r": 11.525,
+        "avg_hold_bars": 43.3,
+        "exit_reasons": {
+          "time": 890,
+          "stop": 467
+        }
+      },
+      {
+        "policy": "pct_trail_10",
+        "desc": "Ratchet a stop 10% below the high-water mark.",
+        "n": 1357,
+        "expectancy_r": 0.97,
+        "win_rate": 0.5188,
+        "profit_factor": 4.013,
+        "avg_win_r": 2.4904,
+        "avg_loss_r": -0.6691,
+        "median_r": 0.0666,
+        "best_r": 79.6475,
+        "worst_r": -1.6208,
+        "max_dd_r": 10.693,
+        "avg_hold_bars": 27.0,
+        "exit_reasons": {
+          "trail": 691,
+          "time": 474,
+          "stop": 192
+        }
+      },
+      {
+        "policy": "vwap_loss",
+        "desc": "Exit on the first close back below session VWAP.",
+        "n": 1357,
+        "expectancy_r": 0.6783,
+        "win_rate": 0.4554,
+        "profit_factor": 3.47,
+        "avg_win_r": 2.0925,
+        "avg_loss_r": -0.5043,
+        "median_r": -0.0755,
+        "best_r": 173.1253,
+        "worst_r": -1.3644,
+        "max_dd_r": 8.93,
+        "avg_hold_bars": 17.4,
+        "exit_reasons": {
+          "vwap": 1007,
+          "stop": 86,
+          "time": 264
+        }
+      },
+      {
+        "policy": "atr_trail_3",
+        "desc": "Trail a stop 3\u00d7ATR below the high-water mark.",
+        "n": 1357,
+        "expectancy_r": 0.6158,
+        "win_rate": 0.5203,
+        "profit_factor": 3.148,
+        "avg_win_r": 1.7344,
+        "avg_loss_r": -0.5974,
+        "median_r": 0.0695,
+        "best_r": 27.9263,
+        "worst_r": -1.3835,
+        "max_dd_r": 7.878,
+        "avg_hold_bars": 19.1,
+        "exit_reasons": {
+          "trail": 982,
+          "time": 268,
+          "stop": 107
+        }
+      },
+      {
+        "policy": "fixed_3r",
+        "desc": "Hard stop + take profit at +3R.",
+        "n": 1357,
+        "expectancy_r": 0.5578,
+        "win_rate": 0.5276,
+        "profit_factor": 2.384,
+        "avg_win_r": 1.8212,
+        "avg_loss_r": -0.8535,
+        "median_r": 0.1272,
+        "best_r": 2.9846,
+        "worst_r": -1.6208,
+        "max_dd_r": 11.525,
+        "avg_hold_bars": 34.3,
+        "exit_reasons": {
+          "time": 583,
+          "target": 333,
+          "stop": 441
+        }
+      },
+      {
+        "policy": "structure_trail",
+        "desc": "Trail to the lowest low of the last 5 bars.",
+        "n": 1357,
+        "expectancy_r": 0.549,
+        "win_rate": 0.4458,
+        "profit_factor": 4.018,
+        "avg_win_r": 1.6393,
+        "avg_loss_r": -0.3282,
+        "median_r": -0.0608,
+        "best_r": 327.5228,
+        "worst_r": -1.2681,
+        "max_dd_r": 9.135,
+        "avg_hold_bars": 5.4,
+        "exit_reasons": {
+          "trail": 1296,
+          "stop": 16,
+          "time": 45
+        }
+      },
+      {
+        "policy": "atr_trail_2",
+        "desc": "Trail a stop 2\u00d7ATR below the high-water mark.",
+        "n": 1357,
+        "expectancy_r": 0.4583,
+        "win_rate": 0.5099,
+        "profit_factor": 2.996,
+        "avg_win_r": 1.3489,
+        "avg_loss_r": -0.4685,
+        "median_r": 0.0208,
+        "best_r": 25.7503,
+        "worst_r": -1.2825,
+        "max_dd_r": 7.794,
+        "avg_hold_bars": 10.2,
+        "exit_reasons": {
+          "trail": 1218,
+          "stop": 16,
+          "time": 123
+        }
+      },
+      {
+        "policy": "fixed_2r",
+        "desc": "Hard stop + take profit at +2R.",
+        "n": 1357,
+        "expectancy_r": 0.4173,
+        "win_rate": 0.552,
+        "profit_factor": 2.099,
+        "avg_win_r": 1.444,
+        "avg_loss_r": -0.8476,
+        "median_r": 0.2788,
+        "best_r": 1.9876,
+        "worst_r": -1.4608,
+        "max_dd_r": 11.525,
+        "avg_hold_bars": 29.6,
+        "exit_reasons": {
+          "time": 465,
+          "target": 479,
+          "stop": 413
+        }
+      },
+      {
+        "policy": "fixed_2r_vwap",
+        "desc": "+2R target, but also bail on a close below VWAP.",
+        "n": 1357,
+        "expectancy_r": 0.2904,
+        "win_rate": 0.4731,
+        "profit_factor": 2.095,
+        "avg_win_r": 1.1746,
+        "avg_loss_r": -0.5035,
+        "median_r": -0.0446,
+        "best_r": 1.9876,
+        "worst_r": -1.3644,
+        "max_dd_r": 8.93,
+        "avg_hold_bars": 11.9,
+        "exit_reasons": {
+          "vwap": 831,
+          "target": 317,
+          "stop": 82,
+          "time": 127
+        }
+      }
+    ]
+  }
+}

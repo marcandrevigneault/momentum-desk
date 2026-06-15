@@ -175,6 +175,38 @@ export interface EdgeScreen {
   sessions: Record<string, EdgeSessionScreen>;
 }
 
+export interface ExitMetrics {
+  policy: string;
+  desc: string;
+  n: number;
+  expectancy_r: number;
+  win_rate: number;
+  profit_factor: number;
+  avg_win_r: number;
+  avg_loss_r: number;
+  median_r: number;
+  best_r: number;
+  worst_r: number;
+  max_dd_r: number;
+  avg_hold_bars: number;
+  exit_reasons: Record<string, number>;
+}
+
+export interface ExitLabSession {
+  session: string;
+  n_events: number;
+  policies: ExitMetrics[];
+}
+
+export interface ExitLab {
+  generated: string | null;
+  days: number | null;
+  data: string | null;
+  slippage: number | null;
+  source: string;
+  sessions: Record<string, ExitLabSession>;
+}
+
 export interface BacktestRun {
   synthetic: boolean;
   session: string;
