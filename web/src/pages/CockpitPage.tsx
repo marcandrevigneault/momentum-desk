@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getTrades } from "../api";
 import DetailPanel from "../components/DetailPanel";
 import Positions from "../components/Positions";
 import ScannerTable from "../components/ScannerTable";
 import Trades from "../components/Trades";
-import type { Point, Trade } from "../types";
+import type { Trade } from "../types";
 import { useScanner, type ConnState } from "../useScanner";
-
-const HIST_CAP = 240;
 
 function ConnBadge({ state, feed }: { state: ConnState; feed?: string }) {
   const map = {
@@ -37,21 +35,6 @@ export default function CockpitPage() {
   const { data, state } = useScanner();
   const [selected, setSelected] = useState<string | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
-  const histories = useRef<Map<string, Point[]>>(new Map());
-
-  if (data) {
-    const seen = [...data.signals.map((s) => ({ sym: s.symbol, last: s.last })),
-                  ...data.positions.map((p) => ({ sym: p.symbol, last: p.last }))];
-    for (const { sym, last } of seen) {
-      const buf = histories.current.get(sym) ?? [];
-      const t = data.ts;
-      if (buf.length === 0 || buf[buf.length - 1].t !== t) {
-        buf.push({ t, last, vwap: last });
-        if (buf.length > HIST_CAP) buf.shift();
-        histories.current.set(sym, buf);
-      }
-    }
-  }
 
   const closedCount = data?.account.closed_trades ?? 0;
   useEffect(() => {
@@ -61,7 +44,6 @@ export default function CockpitPage() {
   const acct = data?.account;
   const selSignal = useMemo(() => data?.signals.find((s) => s.symbol === selected) ?? null, [data, selected]);
   const selPos = useMemo(() => data?.positions.find((p) => p.symbol === selected) ?? null, [data, selected]);
-  const selPoints = selected ? histories.current.get(selected) ?? [] : [];
 
   return (
     <div className="h-full flex flex-col">
@@ -100,7 +82,7 @@ export default function CockpitPage() {
         </section>
         <section className="flex flex-col min-w-0" style={{ flex: "1 1 48%" }}>
           <div style={{ height: "44%", borderBottom: "1px solid var(--line)" }}>
-            <DetailPanel signal={selSignal} position={selPos} points={selPoints} />
+            <DetailPanel signal={selSignal} position={selPos} />
           </div>
           <div style={{ height: "28%", borderBottom: "1px solid var(--line)" }}>
             <Positions positions={data?.positions ?? []} onSelect={setSelected} selected={selected} />
@@ -114,7 +96,9 @@ export default function CockpitPage() {
       <footer className="shrink-0 px-5 py-2 text-[11px] mono flex items-center gap-4" style={{ background: "var(--panel)", borderTop: "1px solid var(--line)", color: "var(--muted)" }}>
         <span>● actionable</span>
         <span style={{ opacity: 0.62 }}>○ flagged — don't chase</span>
-        <span className="ml-auto">Paper-first · simulated broker · mock data unless a real feed is configured. Not advice.</span>
+        <span className="ml-auto">
+          Paper-first · simulated broker · {data?.feed && data.feed !== "mock" ? `${data.feed} feed (15-min delayed)` : "mock data"}. Not advice.
+        </span>
       </footer>
     </div>
   );

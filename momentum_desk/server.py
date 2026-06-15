@@ -204,6 +204,38 @@ async def history(symbol: str) -> dict:
     return {"symbol": symbol, "points": svc.history.get(symbol, [])}
 
 
+@app.get("/api/bars/{symbol}")
+async def bars(symbol: str, tf: str = "1m") -> dict:
+    """Real OHLC candles from Massive for the chart — proper history on click
+    instead of waiting for the slow live stream to accumulate points."""
+    import datetime as dt
+    import urllib.parse
+    import urllib.request
+
+    key = _massive_key()
+    if not key:
+        return {"symbol": symbol, "tf": tf, "candles": [], "error": "no Massive key configured"}
+    mult, span, days = {"1m": (1, "minute", 4), "5m": (5, "minute", 10),
+                        "1d": (1, "day", 200)}.get(tf, (1, "minute", 4))
+    today = dt.date.today()
+    frm = (today - dt.timedelta(days=days)).isoformat()
+    q = urllib.parse.urlencode({"adjusted": "true", "sort": "asc", "limit": 50000, "apiKey": key})
+    url = f"https://api.polygon.io/v2/aggs/ticker/{symbol.upper()}/range/{mult}/{span}/{frm}/{today.isoformat()}?{q}"
+
+    def fetch():
+        with urllib.request.urlopen(url, timeout=15) as r:
+            return json.loads(r.read().decode())
+
+    try:
+        data = await asyncio.to_thread(fetch)
+    except Exception as e:  # noqa: BLE001
+        return {"symbol": symbol, "tf": tf, "candles": [], "error": str(e)}
+    candles = [{"time": int(b["t"] / 1000), "open": b["o"], "high": b["h"],
+                "low": b["l"], "close": b["c"], "volume": int(b.get("v", 0))}
+               for b in (data.get("results") or [])]
+    return {"symbol": symbol, "tf": tf, "candles": candles}
+
+
 @app.get("/api/positions")
 async def positions() -> dict:
     svc: ScannerService = app.state.service

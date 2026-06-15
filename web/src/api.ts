@@ -18,6 +18,11 @@ export async function getHistory(symbol: string): Promise<Point[]> {
   return (await r.json()).points ?? [];
 }
 
+export async function getBars(symbol: string, tf: string): Promise<import("./types").Candle[]> {
+  const r = await fetch(`/api/bars/${symbol}?tf=${tf}`);
+  return (await r.json()).candles ?? [];
+}
+
 export async function getTrades(): Promise<Trade[]> {
   const r = await fetch("/api/trades");
   return (await r.json()).trades ?? [];
