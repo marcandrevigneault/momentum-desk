@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import AppConfig, build_adapter, load_config
 from .models import Signal
@@ -124,3 +126,12 @@ async def ws_signals(ws: WebSocket) -> None:
             await asyncio.sleep(svc.cfg.scan_interval_s)
     except WebSocketDisconnect:
         pass
+
+
+# Serve the built dashboard if present, so the Docker image is one deployable
+# unit. Mounted last, so /api/* and /ws/* (registered above) take precedence.
+# In local dev the dist may not exist — then this is simply skipped and you run
+# the Vite dev server separately.
+_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
+if _DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="web")
