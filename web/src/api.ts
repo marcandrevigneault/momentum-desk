@@ -33,6 +33,11 @@ export async function getExitLab(): Promise<import("./types").ExitLab> {
   return r.json();
 }
 
+export async function getGauntlet(): Promise<import("./types").Gauntlet> {
+  const r = await fetch("/api/gauntlet");
+  return r.json();
+}
+
 export async function getTrades(): Promise<Trade[]> {
   const r = await fetch("/api/trades");
   return (await r.json()).trades ?? [];

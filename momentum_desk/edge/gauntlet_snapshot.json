@@ -1,0 +1,263 @@
+{
+  "generated": "2026-06-15",
+  "days": 120,
+  "data": "polygon",
+  "premarket": {
+    "session": "premarket",
+    "candidate": "pct_trail_10",
+    "n_trades": 1314,
+    "n_days": 109,
+    "expectancy_r": 0.6936,
+    "sharpe_daily": 0.7742,
+    "skew": 1.116,
+    "kurt": 3.817,
+    "boot_lo": 0.5306,
+    "boot_hi": 0.863,
+    "boot_p_pos": 1.0,
+    "n_trials": 30,
+    "sr_star": 0.2437,
+    "psr": 1.0,
+    "dsr": 1.0,
+    "folds": [
+      {
+        "fold": 1,
+        "is_n": 1022,
+        "oos_n": 264,
+        "selected": "time_only",
+        "is_exp": 1.0601,
+        "oos_exp": 0.0443
+      },
+      {
+        "fold": 2,
+        "is_n": 1005,
+        "oos_n": 257,
+        "selected": "time_only",
+        "is_exp": 1.0762,
+        "oos_exp": -0.0411
+      },
+      {
+        "fold": 3,
+        "is_n": 1020,
+        "oos_n": 250,
+        "selected": "time_only",
+        "is_exp": 0.8928,
+        "oos_exp": 0.6015
+      },
+      {
+        "fold": 4,
+        "is_n": 1025,
+        "oos_n": 247,
+        "selected": "time_only",
+        "is_exp": 0.6281,
+        "oos_exp": 1.5281
+      },
+      {
+        "fold": 5,
+        "is_n": 993,
+        "oos_n": 296,
+        "selected": "pct_trail_10",
+        "is_exp": 0.5176,
+        "oos_exp": 1.1855
+      }
+    ],
+    "wf_oos_exp": 0.6637,
+    "wf_pos_folds": 4,
+    "regime": [
+      {
+        "period": "2025-12",
+        "n": 24,
+        "expectancy_r": 0.0512
+      },
+      {
+        "period": "2026-01",
+        "n": 227,
+        "expectancy_r": 0.3181
+      },
+      {
+        "period": "2026-02",
+        "n": 221,
+        "expectancy_r": 0.2701
+      },
+      {
+        "period": "2026-03",
+        "n": 268,
+        "expectancy_r": 0.3109
+      },
+      {
+        "period": "2026-04",
+        "n": 232,
+        "expectancy_r": 1.2502
+      },
+      {
+        "period": "2026-05",
+        "n": 229,
+        "expectancy_r": 1.1702
+      },
+      {
+        "period": "2026-06",
+        "n": 113,
+        "expectancy_r": 1.2113
+      }
+    ],
+    "months_pos_frac": 1.0,
+    "holdout_n": 393,
+    "holdout_exp": 1.0968,
+    "checks": [
+      {
+        "name": "Bootstrap CI",
+        "status": "pass",
+        "detail": "95% CI [+0.531, +0.863]R excludes zero; P(edge>0)=100%"
+      },
+      {
+        "name": "Deflated Sharpe",
+        "status": "pass",
+        "detail": "DSR=100% vs SR* 0.244 over 30 trials"
+      },
+      {
+        "name": "Walk-forward OOS",
+        "status": "pass",
+        "detail": "OOS +0.664R; 4/5 folds positive"
+      },
+      {
+        "name": "Regime stability",
+        "status": "pass",
+        "detail": "100% of months positive"
+      },
+      {
+        "name": "Holdout",
+        "status": "pass",
+        "detail": "untouched holdout expectancy +1.097R (393 trades)"
+      }
+    ],
+    "verdict": "SURVIVES \u2014 positive after deflation, stable out-of-sample"
+  },
+  "intraday": {
+    "session": "intraday",
+    "candidate": "pct_trail_10",
+    "n_trades": 1357,
+    "n_days": 109,
+    "expectancy_r": 0.97,
+    "sharpe_daily": 0.9002,
+    "skew": 1.905,
+    "kurt": 7.939,
+    "boot_lo": 0.7852,
+    "boot_hi": 1.1672,
+    "boot_p_pos": 1.0,
+    "n_trials": 30,
+    "sr_star": 0.6575,
+    "psr": 1.0,
+    "dsr": 0.9988,
+    "folds": [
+      {
+        "fold": 1,
+        "is_n": 1085,
+        "oos_n": 250,
+        "selected": "time_only",
+        "is_exp": 0.9947,
+        "oos_exp": 1.1628
+      },
+      {
+        "fold": 2,
+        "is_n": 1056,
+        "oos_n": 246,
+        "selected": "time_only",
+        "is_exp": 1.0854,
+        "oos_exp": 0.6298
+      },
+      {
+        "fold": 3,
+        "is_n": 1038,
+        "oos_n": 274,
+        "selected": "time_only",
+        "is_exp": 0.9126,
+        "oos_exp": 1.1098
+      },
+      {
+        "fold": 4,
+        "is_n": 1040,
+        "oos_n": 265,
+        "selected": "time_only",
+        "is_exp": 0.8883,
+        "oos_exp": 1.3289
+      },
+      {
+        "fold": 5,
+        "is_n": 1010,
+        "oos_n": 322,
+        "selected": "pct_trail_10",
+        "is_exp": 1.1044,
+        "oos_exp": 0.5854
+      }
+    ],
+    "wf_oos_exp": 0.9633,
+    "wf_pos_folds": 5,
+    "regime": [
+      {
+        "period": "2025-12",
+        "n": 19,
+        "expectancy_r": 0.1073
+      },
+      {
+        "period": "2026-01",
+        "n": 218,
+        "expectancy_r": 1.2126
+      },
+      {
+        "period": "2026-02",
+        "n": 216,
+        "expectancy_r": 0.9192
+      },
+      {
+        "period": "2026-03",
+        "n": 273,
+        "expectancy_r": 0.8458
+      },
+      {
+        "period": "2026-04",
+        "n": 264,
+        "expectancy_r": 1.559
+      },
+      {
+        "period": "2026-05",
+        "n": 242,
+        "expectancy_r": 0.5599
+      },
+      {
+        "period": "2026-06",
+        "n": 125,
+        "expectancy_r": 0.587
+      }
+    ],
+    "months_pos_frac": 1.0,
+    "holdout_n": 418,
+    "holdout_exp": 0.6498,
+    "checks": [
+      {
+        "name": "Bootstrap CI",
+        "status": "pass",
+        "detail": "95% CI [+0.785, +1.167]R excludes zero; P(edge>0)=100%"
+      },
+      {
+        "name": "Deflated Sharpe",
+        "status": "pass",
+        "detail": "DSR=100% vs SR* 0.657 over 30 trials"
+      },
+      {
+        "name": "Walk-forward OOS",
+        "status": "pass",
+        "detail": "OOS +0.963R; 5/5 folds positive"
+      },
+      {
+        "name": "Regime stability",
+        "status": "pass",
+        "detail": "100% of months positive"
+      },
+      {
+        "name": "Holdout",
+        "status": "pass",
+        "detail": "untouched holdout expectancy +0.650R (418 trades)"
+      }
+    ],
+    "verdict": "SURVIVES \u2014 positive after deflation, stable out-of-sample"
+  }
+}

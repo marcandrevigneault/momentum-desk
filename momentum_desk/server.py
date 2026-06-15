@@ -329,6 +329,34 @@ async def edge_screen() -> dict:
     return out
 
 
+@app.get("/api/gauntlet")
+async def gauntlet() -> dict:
+    """Phase-3 evaluation gauntlet: the candidate strategy's verdict per session
+    (bootstrap CI, deflated Sharpe, walk-forward, regime, holdout). Prefers fresh
+    data/gauntlet_*.json on the volume, else the committed snapshot."""
+    snap_path = Path(__file__).parent / "edge" / "gauntlet_snapshot.json"
+    snapshot: dict = {}
+    if snap_path.exists():
+        try:
+            snapshot = json.loads(snap_path.read_text())
+        except Exception:  # noqa: BLE001
+            snapshot = {}
+    out = {"generated": snapshot.get("generated"), "days": snapshot.get("days"),
+           "data": snapshot.get("data"), "sessions": {}, "source": "snapshot"}
+    for session in ("premarket", "intraday"):
+        fresh = Path(f"data/gauntlet_{session}.json")
+        if fresh.exists():
+            try:
+                out["sessions"][session] = json.loads(fresh.read_text())
+                out["source"] = "live"
+                continue
+            except Exception:  # noqa: BLE001
+                pass
+        if session in snapshot:
+            out["sessions"][session] = snapshot[session]
+    return out
+
+
 @app.get("/api/exitlab")
 async def exit_lab() -> dict:
     """Phase-2 exit-policy lab: same entries, different exits, compared per

@@ -64,7 +64,7 @@ before it is believed.
 |---|---|---|
 | **1** | Feature library + univariate **decile-lift screener** + Feature Catalog | done (PR #20) |
 | **2** | Exit-policy lab (same entries, swappable exits, compared) | done |
-| 3 | Evaluation gauntlet (purged CV, deflated Sharpe, regime, bootstrap CIs) | planned |
+| **3** | Evaluation gauntlet (purged CV, deflated Sharpe, regime, bootstrap CIs) | done |
 | 4 | Strategy Inspector + Edge Report UI | planned |
 | 5 | LightGBM + SHAP contender | planned |
 
