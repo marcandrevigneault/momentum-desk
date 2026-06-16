@@ -1,0 +1,158 @@
+{
+  "generated": "2026-06-16",
+  "days": 252,
+  "sessions": {
+    "intraday": {
+      "n_configs": 756,
+      "n_events": 2940,
+      "best_label": "ext\u2264\u221e\u00b7rvol[0.0,10.0]\u00b7mv\u22650.0\u00b7fixed_3r",
+      "best_sharpe": 1.4719,
+      "sr_star": 0.9819,
+      "deflated_sharpe": 1.0,
+      "robust": true,
+      "note": "Winner clears its deflated bar (DSR 100%) even after 756 trials \u2014 not merely the luckiest of the search.",
+      "top": [
+        {
+          "label": "ext\u2264\u221e\u00b7rvol[0.0,10.0]\u00b7mv\u22650.0\u00b7fixed_3r",
+          "daily_sharpe": 1.4719,
+          "expectancy_r": 0.9439,
+          "win_rate": 0.6349,
+          "profit_factor": 4.143,
+          "n": 1909
+        },
+        {
+          "label": "ext\u226410.0\u00b7rvol[0.0,10.0]\u00b7mv\u22650.0\u00b7fixed_3r",
+          "daily_sharpe": 1.4712,
+          "expectancy_r": 0.9786,
+          "win_rate": 0.6452,
+          "profit_factor": 4.318,
+          "n": 1832
+        },
+        {
+          "label": "ext\u226415.0\u00b7rvol[0.0,10.0]\u00b7mv\u22650.0\u00b7fixed_3r",
+          "daily_sharpe": 1.4673,
+          "expectancy_r": 0.9513,
+          "win_rate": 0.6363,
+          "profit_factor": 4.172,
+          "n": 1889
+        },
+        {
+          "label": "ext\u226410.0\u00b7rvol[0.0,20.0]\u00b7mv\u22650.0\u00b7fixed_3r",
+          "daily_sharpe": 1.4486,
+          "expectancy_r": 0.8835,
+          "win_rate": 0.6178,
+          "profit_factor": 3.744,
+          "n": 2059
+        },
+        {
+          "label": "ext\u2264\u221e\u00b7rvol[0.0,20.0]\u00b7mv\u22650.0\u00b7fixed_3r",
+          "daily_sharpe": 1.4449,
+          "expectancy_r": 0.8494,
+          "win_rate": 0.6087,
+          "profit_factor": 3.602,
+          "n": 2167
+        },
+        {
+          "label": "ext\u226415.0\u00b7rvol[0.0,20.0]\u00b7mv\u22650.0\u00b7fixed_3r",
+          "daily_sharpe": 1.4387,
+          "expectancy_r": 0.8588,
+          "win_rate": 0.6097,
+          "profit_factor": 3.629,
+          "n": 2134
+        },
+        {
+          "label": "ext\u226410.0\u00b7rvol[0.0,10.0]\u00b7mv\u22650.0\u00b7fixed_2r",
+          "daily_sharpe": 1.4081,
+          "expectancy_r": 0.7217,
+          "win_rate": 0.6654,
+          "profit_factor": 3.604,
+          "n": 1832
+        },
+        {
+          "label": "ext\u22646.0\u00b7rvol[0.0,10.0]\u00b7mv\u22650.0\u00b7fixed_3r",
+          "daily_sharpe": 1.4051,
+          "expectancy_r": 1.0316,
+          "win_rate": 0.6531,
+          "profit_factor": 4.573,
+          "n": 1620
+        }
+      ]
+    },
+    "premarket": {
+      "n_configs": 756,
+      "n_events": 2698,
+      "best_label": "ext\u22646.0\u00b7rvol[0.0,\u221e]\u00b7mv\u22655.0\u00b7atr_trail_2",
+      "best_sharpe": -0.0632,
+      "sr_star": 1.0603,
+      "deflated_sharpe": 0.0,
+      "robust": false,
+      "note": "WINNER LIKELY OVERFIT: deflated Sharpe 0% < 95% after searching 756 configs \u2014 its edge does not clear the multiple-testing bar.",
+      "top": [
+        {
+          "label": "ext\u22646.0\u00b7rvol[0.0,\u221e]\u00b7mv\u22655.0\u00b7atr_trail_2",
+          "daily_sharpe": -0.0632,
+          "expectancy_r": -0.028,
+          "win_rate": 0.328,
+          "profit_factor": 0.855,
+          "n": 125
+        },
+        {
+          "label": "ext\u22646.0\u00b7rvol[0.0,20.0]\u00b7mv\u22655.0\u00b7atr_trail_2",
+          "daily_sharpe": -0.0708,
+          "expectancy_r": -0.0313,
+          "win_rate": 0.3252,
+          "profit_factor": 0.838,
+          "n": 123
+        },
+        {
+          "label": "ext\u22646.0\u00b7rvol[0.0,10.0]\u00b7mv\u22655.0\u00b7atr_trail_2",
+          "daily_sharpe": -0.0709,
+          "expectancy_r": -0.0315,
+          "win_rate": 0.3305,
+          "profit_factor": 0.838,
+          "n": 118
+        },
+        {
+          "label": "ext\u226410.0\u00b7rvol[3.0,10.0]\u00b7mv\u22655.0\u00b7atr_trail_2",
+          "daily_sharpe": -0.1341,
+          "expectancy_r": -0.0701,
+          "win_rate": 0.3,
+          "profit_factor": 0.681,
+          "n": 50
+        },
+        {
+          "label": "ext\u226410.0\u00b7rvol[3.0,10.0]\u00b7mv\u22650.0\u00b7atr_trail_2",
+          "daily_sharpe": -0.1696,
+          "expectancy_r": -0.0754,
+          "win_rate": 0.2899,
+          "profit_factor": 0.618,
+          "n": 69
+        },
+        {
+          "label": "ext\u226410.0\u00b7rvol[3.0,10.0]\u00b7mv\u22653.0\u00b7atr_trail_2",
+          "daily_sharpe": -0.1718,
+          "expectancy_r": -0.0807,
+          "win_rate": 0.2712,
+          "profit_factor": 0.612,
+          "n": 59
+        },
+        {
+          "label": "ext\u22646.0\u00b7rvol[0.0,\u221e]\u00b7mv\u22653.0\u00b7atr_trail_2",
+          "daily_sharpe": -0.1904,
+          "expectancy_r": -0.068,
+          "win_rate": 0.3005,
+          "profit_factor": 0.667,
+          "n": 193
+        },
+        {
+          "label": "ext\u22646.0\u00b7rvol[0.0,20.0]\u00b7mv\u22653.0\u00b7atr_trail_2",
+          "daily_sharpe": -0.1986,
+          "expectancy_r": -0.0706,
+          "win_rate": 0.3,
+          "profit_factor": 0.657,
+          "n": 190
+        }
+      ]
+    }
+  }
+}

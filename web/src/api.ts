@@ -53,6 +53,24 @@ export async function getCombos(): Promise<import("./types").CombosSnapshot> {
   return r.json();
 }
 
+export async function getOptimize(): Promise<import("./types").OptimizeSnapshot> {
+  const r = await fetch("/api/optimize");
+  return r.json();
+}
+
+export async function getActiveStrategy(): Promise<import("./types").ActiveStrategy> {
+  const r = await fetch("/api/active-strategy");
+  return r.json();
+}
+
+export async function setActiveStrategy(active: string, label: string): Promise<import("./types").ActiveStrategy> {
+  const r = await fetch("/api/active-strategy", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ active, label }),
+  });
+  return r.json();
+}
+
 export async function getTrades(): Promise<Trade[]> {
   const r = await fetch("/api/trades");
   return (await r.json()).trades ?? [];
