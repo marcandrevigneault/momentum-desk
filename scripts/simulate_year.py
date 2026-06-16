@@ -39,13 +39,16 @@ def main() -> None:
     ap.add_argument("--risk-pct", type=float, default=1.0)
     ap.add_argument("--max-concurrent", type=int, default=5)
     ap.add_argument("--slippage", type=float, default=0.3)
+    ap.add_argument("--compound", action="store_true",
+                    help="risk a %% of CURRENT equity each trade (compounds) instead of the fixed start balance")
     ap.add_argument("--out", default="data/sim_year.json")
     args = ap.parse_args()
 
     provider = _provider(args.data, args.session, args.days)
     scfg = SimConfig(session=args.session, exit_policy=args.policy, slippage_pct=args.slippage,
                      max_concurrent=args.max_concurrent)
-    rcfg = RiskConfig(account_equity=args.equity, max_risk_per_trade_pct=args.risk_pct)
+    rcfg = RiskConfig(account_equity=args.equity, max_risk_per_trade_pct=args.risk_pct,
+                      compound=args.compound)
     res = run_simulation(provider, scfg, rcfg)
 
     m = res.metrics

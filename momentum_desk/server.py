@@ -330,12 +330,13 @@ async def edge_screen() -> dict:
 
 
 @app.get("/api/simrun")
-async def sim_run(window: str = "1y") -> dict:
+async def sim_run(window: str = "1y", compound: bool = False) -> dict:
     """Full end-to-end account simulation. `window` selects the horizon: "1y"
-    (last year) or "5y" (last five years). Prefers a fresh run on the volume,
+    (last year) or "5y" (last five years). `compound` sizes risk off the live
+    book instead of the fixed start balance. Prefers a fresh run on the volume,
     else the committed snapshot."""
-    suffix = "_5y" if window == "5y" else ""
-    fresh = Path(f"data/sim{'_5y' if window == '5y' else '_year'}.json")
+    suffix = ("_5y" if window == "5y" else "") + ("_c" if compound else "")
+    fresh = Path(f"data/sim{'_5y' if window == '5y' else '_year'}{'_c' if compound else ''}.json")
     if fresh.exists():
         try:
             return {"source": "live", **json.loads(fresh.read_text())}

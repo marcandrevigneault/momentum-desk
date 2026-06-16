@@ -27,6 +27,9 @@ class RiskConfig:
     max_position_pct_of_equity: float = 25.0   # no single name dominates the book
     max_pct_of_recent_volume: float = 1.0      # your size vs tape — the liquidity guard
     min_stop_distance_pct: float = 1.0     # reject no-stop / too-tight "hope" trades
+    compound: bool = False                 # size off CURRENT equity (the sim feeds it
+                                           # back via mark_equity) vs a fixed % of the
+                                           # starting balance — see RiskEngine.live_equity
 
 
 @dataclass
@@ -48,10 +51,20 @@ class RiskEngine:
     def __init__(self, config: RiskConfig | None = None) -> None:
         self.config = config or RiskConfig()
         self.realized_pnl_today: float = 0.0
+        # the equity sizing and the daily-loss breaker read. Starts at the
+        # configured balance; when compound is on the sim calls mark_equity()
+        # after each fill so risk scales with the live book.
+        self.live_equity: float = self.config.account_equity
+
+    def mark_equity(self, equity: float) -> None:
+        """Sim loops call this after every fill. No-op unless compounding, so
+        fixed-dollar runs (and their snapshots) are unchanged."""
+        if self.config.compound:
+            self.live_equity = equity
 
     @property
     def daily_loss_limit_hit(self) -> bool:
-        limit = -self.config.account_equity * self.config.max_daily_loss_pct / 100.0
+        limit = -self.live_equity * self.config.max_daily_loss_pct / 100.0
         return self.realized_pnl_today <= limit
 
     def record_fill(self, realized_pnl: float) -> None:
@@ -84,11 +97,11 @@ class RiskEngine:
             )
             return PositionPlan(snap.symbol, Verdict.REJECTED, 0, entry, stop, 0.0, reasons)
 
-        risk_dollars = c.account_equity * c.max_risk_per_trade_pct / 100.0
+        risk_dollars = self.live_equity * c.max_risk_per_trade_pct / 100.0
         shares = int(risk_dollars / stop_dist)
 
         # cap 1: position notional vs equity
-        max_notional = c.account_equity * c.max_position_pct_of_equity / 100.0
+        max_notional = self.live_equity * c.max_position_pct_of_equity / 100.0
         if shares * entry > max_notional:
             shares = int(max_notional / entry)
             reasons.append(f"size capped to {c.max_position_pct_of_equity}% of equity")

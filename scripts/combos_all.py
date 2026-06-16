@@ -8,6 +8,7 @@ selector + a full trade log. Writes momentum_desk/edge/combos_snapshot.json:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 from dataclasses import asdict
@@ -47,22 +48,37 @@ def main():
         return ComboLeg(name="fade", provider=_prov(args.data, "intraday", args.days),
                         session="intraday", style="fade", exit_policy="pct_trail_10", slippage_pct=0.5)
 
+    # NOTE: legs are built lazily per-combo (factories, not prebuilt instances).
+    # Each provider caches every symbol-day's minute bars in RAM for the whole
+    # window; holding all six legs at once OOMs on a 5y (1260-day) run. Building
+    # one combo's legs at a time and freeing them keeps peak memory to the single
+    # heaviest combo (3 legs) instead of all six.
     combos = {
-        "intraday": ("Intraday only", [intraday()]),
-        "premkt_intraday": ("Premarket + Intraday (no fade)", [premarket(), intraday()]),
-        "three_leg": ("Premarket + Intraday + Fade", [premarket(), intraday(), fade()]),
+        "intraday": ("Intraday only", lambda: [intraday()]),
+        "premkt_intraday": ("Premarket + Intraday (no fade)", lambda: [premarket(), intraday()]),
+        "three_leg": ("Premarket + Intraday + Fade", lambda: [premarket(), intraday(), fade()]),
     }
 
+    # each combo is emitted twice: fixed-dollar risk (key as-is) and compounding
+    # risk on the live book (key + "_c", label + " (% equity)"). Both variants
+    # reuse the same (already-cached) legs, so compounding costs compute, not RAM.
+    variants = [("", False, ""), ("_c", True, " (% equity)")]
+
     out = {"generated": "2026-06-16", "days": args.days, "data": args.data, "combos": {}}
-    for key, (label, legs) in combos.items():
-        res = run_combo(legs, ComboConfig(), RiskConfig(account_equity=25_000))
-        d = asdict(res)
-        d.pop("equity_curve", None)   # unused by the page; slim
-        d["label"] = label
-        out["combos"][key] = d
-        m = res.metrics
-        print(f"  {label:<34} ${res.final_equity:>10,.0f}  PF {m['profit_factor']:>5.2f}  "
-              f"expR {m['expectancy_r']:>+6.3f}  maxDD {m['max_drawdown_pct']:>5.1f}%  legs {res.leg_pnl}")
+    for key, (label, make_legs) in combos.items():
+        legs = make_legs()
+        for kx, compound, lx in variants:
+            res = run_combo(legs, ComboConfig(),
+                            RiskConfig(account_equity=25_000, compound=compound))
+            d = asdict(res)
+            d.pop("equity_curve", None)   # unused by the page; slim
+            d["label"] = label + lx
+            out["combos"][key + kx] = d
+            m = res.metrics
+            print(f"  {label + lx:<44} ${res.final_equity:>10,.0f}  PF {m['profit_factor']:>5.2f}  "
+                  f"expR {m['expectancy_r']:>+6.3f}  maxDD {m['max_drawdown_pct']:>5.1f}%  legs {res.leg_pnl}")
+        del legs                    # release this combo's minute caches before the next
+        gc.collect()
 
     path = Path(args.out)
     path.write_text(json.dumps(out))

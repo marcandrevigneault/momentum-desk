@@ -162,6 +162,7 @@ def run_combo(legs: list[ComboLeg], ccfg: ComboConfig | None = None,
             for op in due:
                 equity += op["pnl"]
                 risk.record_fill(op["pnl"])
+                risk.mark_equity(equity)
                 leg_pnl[op["leg"]] += op["pnl"]
                 curve.append(round(equity, 2))
             if risk.daily_loss_limit_hit:
@@ -193,6 +194,7 @@ def run_combo(legs: list[ComboLeg], ccfg: ComboConfig | None = None,
         for op in due:
             equity += op["pnl"]
             risk.record_fill(op["pnl"])
+            risk.mark_equity(equity)
             leg_pnl[op["leg"]] += op["pnl"]
             curve.append(round(equity, 2))
         daily.append({"date": day, "equity": round(equity, 2)})

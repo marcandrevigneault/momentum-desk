@@ -15,18 +15,24 @@ const rColor = (v: number) => (v >= 0 ? "var(--green)" : "var(--red)");
 // strategy options — single strategy (from /api/simrun) or a combo (from
 // /api/combos, already account-level). Duration (1y/5y) is a SEPARATE selector,
 // so any strategy or combo can be viewed over either window.
-const STRAT_OPTS: { id: string; label: string; comboKey?: string }[] = [
+// `compound` variants (labelled "(% equity)") size risk off the CURRENT book
+// each trade — % of live equity — rather than a fixed % of the start balance.
+const STRAT_OPTS: { id: string; label: string; comboKey?: string; compound?: boolean }[] = [
   { id: "intraday", label: "Intraday momentum" },
   { id: "combo-intraday", label: "Combo: Intraday only", comboKey: "intraday" },
   { id: "combo-premkt", label: "Combo: Premarket + Intraday", comboKey: "premkt_intraday" },
   { id: "combo-three", label: "Combo: 3-leg (+fade)", comboKey: "three_leg" },
+  { id: "intraday-c", label: "Intraday momentum (% equity)", compound: true },
+  { id: "combo-intraday-c", label: "Combo: Intraday only (% equity)", comboKey: "intraday_c" },
+  { id: "combo-premkt-c", label: "Combo: Premarket + Intraday (% equity)", comboKey: "premkt_intraday_c" },
+  { id: "combo-three-c", label: "Combo: 3-leg (+fade) (% equity)", comboKey: "three_leg_c" },
 ];
 
 function loadStrat(stratId: string, win: string): Promise<SimRun> {
   const opt = STRAT_OPTS.find((o) => o.id === stratId) ?? STRAT_OPTS[0];
   return opt.comboKey
     ? getCombos(win).then((c) => c.combos[opt.comboKey!] as unknown as SimRun)
-    : getSimRun(win);
+    : getSimRun(win, opt.compound);
 }
 
 function Stat({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: string }) {
