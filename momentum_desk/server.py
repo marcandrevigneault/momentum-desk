@@ -350,6 +350,24 @@ async def sim_run(window: str = "1y") -> dict:
     return {"source": "none", "trades": [], "metrics": {}}
 
 
+@app.get("/api/rules")
+async def rules_results() -> dict:
+    """AND/OR entry+exit rule combos (#4): compare composed rules head-to-head."""
+    fresh = Path("data/rules.json")
+    if fresh.exists():
+        try:
+            return {"source": "live", **json.loads(fresh.read_text())}
+        except Exception:  # noqa: BLE001
+            pass
+    snap = Path(__file__).parent / "edge" / "rules_snapshot.json"
+    if snap.exists():
+        try:
+            return {"source": "snapshot", **json.loads(snap.read_text())}
+        except Exception:  # noqa: BLE001
+            pass
+    return {"source": "none", "results": []}
+
+
 @app.get("/api/optimize")
 async def optimize_results() -> dict:
     """Per-session optimizer results (#6): best config + deflated Sharpe + whether
