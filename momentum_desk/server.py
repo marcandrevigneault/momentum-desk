@@ -350,6 +350,25 @@ async def sim_run(window: str = "1y") -> dict:
     return {"source": "none", "trades": [], "metrics": {}}
 
 
+@app.get("/api/combos")
+async def combos_all() -> dict:
+    """Named combos for the selector (each carries a full trade log). Prefers a
+    fresh data/combos.json on the volume, else the committed snapshot."""
+    fresh = Path("data/combos.json")
+    if fresh.exists():
+        try:
+            return {"source": "live", **json.loads(fresh.read_text())}
+        except Exception:  # noqa: BLE001
+            pass
+    snap = Path(__file__).parent / "edge" / "combos_snapshot.json"
+    if snap.exists():
+        try:
+            return {"source": "snapshot", **json.loads(snap.read_text())}
+        except Exception:  # noqa: BLE001
+            pass
+    return {"source": "none", "combos": {}}
+
+
 @app.get("/api/combo")
 async def combo_run(window: str = "1y") -> dict:
     """Multi-style combo: several strategy legs in one shared-capital book.

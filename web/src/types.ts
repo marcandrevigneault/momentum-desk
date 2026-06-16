@@ -311,10 +311,19 @@ export interface SimRun {
   trades: SimTrade[];
 }
 
+export interface CombosSnapshot {
+  source: string;
+  generated?: string;
+  days?: number;
+  data?: string;
+  combos: Record<string, ComboRun>;
+}
+
 export interface ComboRun {
   source: string;
   generated?: string;
   config?: string;
+  label?: string;
   legs: string[];
   days: number;
   starting_equity: number;
