@@ -2,15 +2,25 @@ import { useEffect, useState } from "react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { getSimRun } from "../api";
+import { getCombos, getSimRun } from "../api";
 import type { SimRun } from "../types";
 
-/** End-to-end account simulation of the assembled strategy (detect → size →
+/** End-to-end account simulation — pick a strategy or combo (detect → size →
  *  enter → trail → exit) with real capital, concurrency and the liquidity guard.
  *  The number that actually matters: what it would have done to the account. */
 
 const money = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const rColor = (v: number) => (v >= 0 ? "var(--green)" : "var(--red)");
+
+// selectable account simulations — single strategies (from /api/simrun) and
+// combos (from /api/combos, already account-level). Combos lack stress/exit_policy.
+const STRATS: { id: string; label: string; load: () => Promise<SimRun> }[] = [
+  { id: "intraday-1y", label: "Intraday · 1y", load: () => getSimRun("1y") },
+  { id: "intraday-5y", label: "Intraday · 5y", load: () => getSimRun("5y") },
+  { id: "combo-intraday", label: "Combo: Intraday only", load: () => getCombos().then((c) => c.combos.intraday as unknown as SimRun) },
+  { id: "combo-premkt", label: "Combo: Premarket + Intraday", load: () => getCombos().then((c) => c.combos.premkt_intraday as unknown as SimRun) },
+  { id: "combo-three", label: "Combo: 3-leg (+fade)", load: () => getCombos().then((c) => c.combos.three_leg as unknown as SimRun) },
+];
 
 function Stat({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: string }) {
   return (
@@ -25,15 +35,15 @@ function Stat({ label, value, color, sub }: { label: string; value: string; colo
 export default function SimulationPage() {
   const [sim, setSim] = useState<SimRun | null>(null);
   const [err, setErr] = useState(false);
-  const [win, setWin] = useState("1y");
+  const [strat, setStrat] = useState("intraday-1y");
   const [month, setMonth] = useState<string | null>(null);
 
   useEffect(() => {
     setSim(null);
     setErr(false);
     setMonth(null);
-    getSimRun(win).then(setSim).catch(() => setErr(true));
-  }, [win]);
+    (STRATS.find((s) => s.id === strat) ?? STRATS[0]).load().then(setSim).catch(() => setErr(true));
+  }, [strat]);
 
   if (err) return <div className="p-6 text-[13px]" style={{ color: "var(--red)" }}>Failed to load simulation.</div>;
   if (!sim) return <div className="p-6 text-[13px]" style={{ color: "var(--muted)" }}>Loading simulation…</div>;
@@ -51,24 +61,21 @@ export default function SimulationPage() {
     <div className="h-full overflow-auto p-5">
       <div className="flex items-center gap-3 mb-1">
         <h2 className="text-[18px] font-bold m-0">Account simulation</h2>
-        <span className="badge" style={{ color: "var(--muted)", borderColor: "var(--line)" }}>{sim.source}</span>
-        <span className="mono text-[11px]" style={{ color: "var(--muted)" }}>{sim.session} · {sim.exit_policy} · {sim.days} days</span>
-        <div className="ml-auto flex rounded-md overflow-hidden" style={{ border: "1px solid var(--line)" }}>
-          {["1y", "5y"].map((w) => (
-            <button key={w} onClick={() => setWin(w)} className="mono text-[11px] px-3 py-1"
-              style={{ background: win === w ? "var(--panel-2)" : "transparent", color: win === w ? "var(--text)" : "var(--muted)" }}>
-              {w}
-            </button>
-          ))}
-        </div>
+        <span className="badge" style={{ color: "var(--muted)", borderColor: "var(--line)" }}>{sim.source ?? "snapshot"}</span>
+        <span className="mono text-[11px]" style={{ color: "var(--muted)" }}>
+          {sim.session ? `${sim.session} · ${sim.exit_policy}` : (sim.legs?.join(" + ") ?? "combo")} · {sim.days} days
+        </span>
+        <select value={strat} onChange={(e) => setStrat(e.target.value)} className="ml-auto mono text-[11px] px-2 py-1 rounded"
+          style={{ background: "var(--panel)", border: "1px solid var(--line)", color: "var(--text)" }}>
+          {STRATS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
       </div>
       <p className="text-[12px] mb-4 max-w-3xl" style={{ color: "var(--muted)" }}>
-        The assembled strategy run like a real book: detect candidates, size each by the risk engine
+        Any strategy or combo run like a real book: detect candidates, size each by the risk engine
         (<b>1% of the book risked per trade</b>, capped at 25% of equity per name + the liquidity guard),
-        cap concurrent positions and the capital deployed, exit on the {sim.exit_policy} stop, honour the
-        daily-loss breaker, commissions and slippage. The trade log's <b>Size %</b> is each position's
-        notional as a % of the book. Sizing is <b>fixed</b> off the starting balance here (it does not
-        compound) — this is the account-level result, not per-trade R.
+        cap concurrent positions and the capital deployed, exit on the chosen stop, honour the daily-loss
+        breaker, commissions and slippage. The trade log's <b>Size %</b> is notional as a % of the book.
+        Sizing is <b>fixed</b> (does not compound) — this is the account-level result, not per-trade R.
       </p>
 
       {/* headline stats */}
@@ -87,7 +94,7 @@ export default function SimulationPage() {
           ⚠ The headline % is large because it's measured against the small $25k base (sizing is <b>fixed</b>,
           not compounding) and the fills are optimistic (0.3% slippage, <b>no halts modeled</b> — these names
           halt constantly), plus universe survivorship. The trustworthy signal is the expectancy and
-          month-to-month consistency, not the dollar figure. Slippage sensitivity (same year):
+          month-to-month consistency, not the dollar figure.{sim.stress ? " Slippage sensitivity (same year):" : ""}
         </div>
         {sim.stress && (
           <table className="w-full text-[12px] mono">

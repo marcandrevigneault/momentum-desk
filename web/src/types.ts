@@ -294,8 +294,9 @@ export interface SimStressRow {
 }
 
 export interface SimRun {
-  source: string;
-  session: string;
+  source?: string;
+  session?: string;       // single-strategy sims only (combos use `legs`)
+  legs?: string[];        // combos only
   stress?: SimStressRow[];
   exit_policy: string;
   days: number;
