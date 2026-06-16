@@ -58,6 +58,11 @@ export async function getOptimize(): Promise<import("./types").OptimizeSnapshot>
   return r.json();
 }
 
+export async function getRules(): Promise<import("./types").RulesSnapshot> {
+  const r = await fetch("/api/rules");
+  return r.json();
+}
+
 export async function getActiveStrategy(): Promise<import("./types").ActiveStrategy> {
   const r = await fetch("/api/active-strategy");
   return r.json();

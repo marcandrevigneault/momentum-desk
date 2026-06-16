@@ -321,6 +321,25 @@ export interface OptimizeSessionResult {
   top: { label: string; daily_sharpe: number; expectancy_r: number; win_rate: number; profit_factor: number | null; n: number }[];
 }
 
+export interface RuleResult {
+  name: string;
+  rule: string;
+  exit_policy: string;
+  n: number;
+  expectancy_r: number;
+  win_rate: number;
+  profit_factor: number;
+  daily_sharpe: number;
+}
+
+export interface RulesSnapshot {
+  source: string;
+  generated?: string;
+  session?: string;
+  days?: number;
+  results: RuleResult[];
+}
+
 export interface OptimizeSnapshot {
   source: string;
   generated?: string;
