@@ -32,6 +32,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", choices=["synthetic", "polygon"], default="synthetic")
     ap.add_argument("--days", type=int, default=252)
+    ap.add_argument("--out", default="momentum_desk/edge/combos_snapshot.json")
     args = ap.parse_args()
 
     def intraday():
@@ -63,7 +64,7 @@ def main():
         print(f"  {label:<34} ${res.final_equity:>10,.0f}  PF {m['profit_factor']:>5.2f}  "
               f"expR {m['expectancy_r']:>+6.3f}  maxDD {m['max_drawdown_pct']:>5.1f}%  legs {res.leg_pnl}")
 
-    path = Path("momentum_desk/edge/combos_snapshot.json")
+    path = Path(args.out)
     path.write_text(json.dumps(out))
     print(f"  → wrote {path} ({path.stat().st_size/1e6:.1f}MB)")
 

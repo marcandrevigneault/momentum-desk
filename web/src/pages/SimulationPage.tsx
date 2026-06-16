@@ -12,15 +12,22 @@ import type { SimRun } from "../types";
 const money = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const rColor = (v: number) => (v >= 0 ? "var(--green)" : "var(--red)");
 
-// selectable account simulations — single strategies (from /api/simrun) and
-// combos (from /api/combos, already account-level). Combos lack stress/exit_policy.
-const STRATS: { id: string; label: string; load: () => Promise<SimRun> }[] = [
-  { id: "intraday-1y", label: "Intraday · 1y", load: () => getSimRun("1y") },
-  { id: "intraday-5y", label: "Intraday · 5y", load: () => getSimRun("5y") },
-  { id: "combo-intraday", label: "Combo: Intraday only", load: () => getCombos().then((c) => c.combos.intraday as unknown as SimRun) },
-  { id: "combo-premkt", label: "Combo: Premarket + Intraday", load: () => getCombos().then((c) => c.combos.premkt_intraday as unknown as SimRun) },
-  { id: "combo-three", label: "Combo: 3-leg (+fade)", load: () => getCombos().then((c) => c.combos.three_leg as unknown as SimRun) },
+// strategy options — single strategy (from /api/simrun) or a combo (from
+// /api/combos, already account-level). Duration (1y/5y) is a SEPARATE selector,
+// so any strategy or combo can be viewed over either window.
+const STRAT_OPTS: { id: string; label: string; comboKey?: string }[] = [
+  { id: "intraday", label: "Intraday momentum" },
+  { id: "combo-intraday", label: "Combo: Intraday only", comboKey: "intraday" },
+  { id: "combo-premkt", label: "Combo: Premarket + Intraday", comboKey: "premkt_intraday" },
+  { id: "combo-three", label: "Combo: 3-leg (+fade)", comboKey: "three_leg" },
 ];
+
+function loadStrat(stratId: string, win: string): Promise<SimRun> {
+  const opt = STRAT_OPTS.find((o) => o.id === stratId) ?? STRAT_OPTS[0];
+  return opt.comboKey
+    ? getCombos(win).then((c) => c.combos[opt.comboKey!] as unknown as SimRun)
+    : getSimRun(win);
+}
 
 function Stat({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: string }) {
   return (
@@ -35,15 +42,16 @@ function Stat({ label, value, color, sub }: { label: string; value: string; colo
 export default function SimulationPage() {
   const [sim, setSim] = useState<SimRun | null>(null);
   const [err, setErr] = useState(false);
-  const [strat, setStrat] = useState("intraday-1y");
+  const [strat, setStrat] = useState("intraday");
+  const [win, setWin] = useState("1y");
   const [month, setMonth] = useState<string | null>(null);
 
   useEffect(() => {
     setSim(null);
     setErr(false);
     setMonth(null);
-    (STRATS.find((s) => s.id === strat) ?? STRATS[0]).load().then(setSim).catch(() => setErr(true));
-  }, [strat]);
+    loadStrat(strat, win).then(setSim).catch(() => setErr(true));
+  }, [strat, win]);
 
   if (err) return <div className="p-6 text-[13px]" style={{ color: "var(--red)" }}>Failed to load simulation.</div>;
   if (!sim) return <div className="p-6 text-[13px]" style={{ color: "var(--muted)" }}>Loading simulation…</div>;
@@ -67,8 +75,16 @@ export default function SimulationPage() {
         </span>
         <select value={strat} onChange={(e) => setStrat(e.target.value)} className="ml-auto mono text-[11px] px-2 py-1 rounded"
           style={{ background: "var(--panel)", border: "1px solid var(--line)", color: "var(--text)" }}>
-          {STRATS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          {STRAT_OPTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
+        <div className="flex rounded-md overflow-hidden" style={{ border: "1px solid var(--line)" }}>
+          {["1y", "5y"].map((w) => (
+            <button key={w} onClick={() => setWin(w)} className="mono text-[11px] px-3 py-1"
+              style={{ background: win === w ? "var(--panel-2)" : "transparent", color: win === w ? "var(--text)" : "var(--muted)" }}>
+              {w}
+            </button>
+          ))}
+        </div>
       </div>
       <p className="text-[12px] mb-4 max-w-3xl" style={{ color: "var(--muted)" }}>
         Any strategy or combo run like a real book: detect candidates, size each by the risk engine
