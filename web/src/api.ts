@@ -63,6 +63,21 @@ export async function getRules(): Promise<import("./types").RulesSnapshot> {
   return r.json();
 }
 
+export async function getTunerMeta(): Promise<{ sessions: string[]; policies: string[]; days: number | null; available: boolean }> {
+  const r = await fetch("/api/tuner");
+  return r.json();
+}
+
+export async function evaluateConfig(p: {
+  session: string; max_ext: number | null; rvol_min: number; rvol_max: number | null; min_move: number; exit: string;
+}): Promise<{ n: number; expectancy_r: number; win_rate: number; profit_factor: number; daily_sharpe: number }> {
+  const q = new URLSearchParams({ session: p.session, rvol_min: String(p.rvol_min), min_move: String(p.min_move), exit: p.exit });
+  if (p.max_ext != null) q.set("max_ext", String(p.max_ext));
+  if (p.rvol_max != null) q.set("rvol_max", String(p.rvol_max));
+  const r = await fetch(`/api/evaluate?${q}`);
+  return r.json();
+}
+
 export async function getActiveStrategy(): Promise<import("./types").ActiveStrategy> {
   const r = await fetch("/api/active-strategy");
   return r.json();

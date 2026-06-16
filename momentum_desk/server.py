@@ -350,6 +350,44 @@ async def sim_run(window: str = "1y") -> dict:
     return {"source": "none", "trades": [], "metrics": {}}
 
 
+_EVAL_CACHE: dict = {}
+
+
+def _load_eval_cache() -> dict:
+    if not _EVAL_CACHE:
+        for p in (Path("data/eval_cache.json"), Path(__file__).parent / "edge" / "eval_cache.json"):
+            if p.exists():
+                try:
+                    _EVAL_CACHE.update(json.loads(p.read_text()))
+                    break
+                except Exception:  # noqa: BLE001
+                    pass
+    return _EVAL_CACHE
+
+
+@app.get("/api/tuner")
+async def tuner_meta() -> dict:
+    """What the live variable editor needs to render: sessions + exit policies."""
+    c = _load_eval_cache()
+    return {"sessions": list(c.get("sessions", {}).keys()), "policies": c.get("policies", []),
+            "days": c.get("days"), "available": bool(c.get("sessions"))}
+
+
+@app.get("/api/evaluate")
+async def evaluate_config(session: str = "intraday", max_ext: float | None = None,
+                          rvol_min: float = 0.0, rvol_max: float | None = None,
+                          min_move: float = 0.0, exit: str = "pct_trail_10") -> dict:
+    """Score one variable combination off the precomputed cache — instant. Drives
+    the live variable editor (#6)."""
+    from .edge.tuner import evaluate
+    c = _load_eval_cache()
+    events = c.get("sessions", {}).get(session, [])
+    if not events:
+        return {"n": 0, "error": "no cache for session"}
+    return evaluate(events, max_ext=max_ext, rvol_min=rvol_min, rvol_max=rvol_max,
+                    min_move=min_move, exit_policy=exit)
+
+
 @app.get("/api/rules")
 async def rules_results() -> dict:
     """AND/OR entry+exit rule combos (#4): compare composed rules head-to-head."""
