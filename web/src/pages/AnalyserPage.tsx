@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getActiveStrategy, getCombos, getGauntlet, getOptimize, setActiveStrategy } from "../api";
+import { getActiveStrategy, getCombos, getCombosOptimize, getGauntlet, getOptimize, setActiveStrategy } from "../api";
 import type { ActiveStrategy, CombosSnapshot, Gauntlet, OptimizeSnapshot } from "../types";
 
 /** Strategy analyser — one place to interpret and COMPARE everything built, and
@@ -33,8 +33,8 @@ export default function AnalyserPage() {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const [g, c, o, a] = await Promise.all([getGauntlet(), getCombos(), getOptimize(), getActiveStrategy()]) as
-      [Gauntlet, CombosSnapshot, OptimizeSnapshot, ActiveStrategy];
+    const [g, c, o, a, co] = await Promise.all([getGauntlet(), getCombos(), getOptimize(), getActiveStrategy(), getCombosOptimize()]) as
+      [Gauntlet, CombosSnapshot, OptimizeSnapshot, ActiveStrategy, Awaited<ReturnType<typeof getCombosOptimize>>];
     const out: Row[] = [];
     // single-session strategies from the gauntlet + optimizer
     for (const s of ["intraday", "premarket"]) {
@@ -53,14 +53,17 @@ export default function AnalyserPage() {
         optimized: os ? (os.robust ? "yes" : "overfit") : "na",
       });
     }
-    // combos
+    // combos (now parameter-optimized — best config from the combo sweep)
+    const bbc = co.best_by_combo ?? {};
     for (const [k, cb] of Object.entries(c.combos ?? {})) {
       const m = cb.metrics;
+      const opt = bbc[k];
       out.push({
         id: `combo:${k}`, name: cb.label ?? k, kind: "combo",
-        vars: cb.legs.join(" + "),
+        vars: cb.legs.join(" + ") + (opt ? ` · best: ${opt.intraday_exit}·mc${opt.max_concurrent}` : ""),
         expectancy_r: m?.expectancy_r ?? null, pf: m?.profit_factor ?? null,
-        sharpe: null, verdict: "—", optimized: "na",
+        sharpe: opt?.daily_sharpe ?? null, verdict: "—",
+        optimized: opt ? "yes" : "na",
       });
     }
     setRows(out);

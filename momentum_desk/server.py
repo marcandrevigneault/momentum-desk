@@ -406,6 +406,19 @@ async def rules_results() -> dict:
     return {"source": "none", "results": []}
 
 
+@app.get("/api/combos-optimize")
+async def combos_optimize() -> dict:
+    """Combo parameter sweep (#6): best config per combo + whether any combo beats
+    intraday-alone. Drives the combo 'optimized' badge."""
+    snap = Path(__file__).parent / "edge" / "combos_optimize_snapshot.json"
+    if snap.exists():
+        try:
+            return {"source": "snapshot", **json.loads(snap.read_text())}
+        except Exception:  # noqa: BLE001
+            pass
+    return {"source": "none", "results": []}
+
+
 @app.get("/api/optimize")
 async def optimize_results() -> dict:
     """Per-session optimizer results (#6): best config + deflated Sharpe + whether
