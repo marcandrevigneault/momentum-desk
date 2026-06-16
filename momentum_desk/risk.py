@@ -58,9 +58,11 @@ class RiskEngine:
         """Feed closed-trade P&L back so the circuit breaker can trip."""
         self.realized_pnl_today += realized_pnl
 
-    def plan(self, snap: Snapshot, entry: float, stop: float) -> PositionPlan:
+    def plan(self, snap: Snapshot, entry: float, stop: float, side: str = "long") -> PositionPlan:
         """Size a trade from its stop, then run every guard. Returns a plan with
-        a share count if OK, or verdict=REJECTED with the reasons why."""
+        a share count if OK, or verdict=REJECTED with the reasons why. `side`
+        flips the stop geometry for short (mean-reversion fade) trades — the stop
+        sits ABOVE entry there; the sizing math is otherwise identical."""
         c = self.config
         reasons: list[str] = []
 
@@ -68,10 +70,10 @@ class RiskEngine:
             reasons.append(f"daily loss limit hit ({c.max_daily_loss_pct}% of equity) — done for the day")
             return PositionPlan(snap.symbol, Verdict.REJECTED, 0, entry, stop, 0.0, reasons)
 
-        stop_dist = entry - stop
+        stop_dist = (stop - entry) if side == "short" else (entry - stop)
         stop_dist_pct = 100.0 * stop_dist / entry if entry > 0 else 0.0
         if stop_dist <= 0:
-            reasons.append("stop must be below entry (long-only sizing)")
+            reasons.append(f"stop on wrong side of entry for a {side} (sizing needs a real risk distance)")
             return PositionPlan(snap.symbol, Verdict.REJECTED, 0, entry, stop, 0.0, reasons)
         if stop_dist_pct < c.min_stop_distance_pct:
             # ENFORCED (not advisory): a sub-floor stop ⇒ enormous share count and

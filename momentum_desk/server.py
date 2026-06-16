@@ -330,16 +330,18 @@ async def edge_screen() -> dict:
 
 
 @app.get("/api/simrun")
-async def sim_run() -> dict:
-    """Full end-to-end account simulation of the assembled strategy. Prefers a
-    fresh data/sim_year.json on the volume, else the committed snapshot."""
-    fresh = Path("data/sim_year.json")
+async def sim_run(window: str = "1y") -> dict:
+    """Full end-to-end account simulation. `window` selects the horizon: "1y"
+    (last year) or "5y" (last five years). Prefers a fresh run on the volume,
+    else the committed snapshot."""
+    suffix = "_5y" if window == "5y" else ""
+    fresh = Path(f"data/sim{'_5y' if window == '5y' else '_year'}.json")
     if fresh.exists():
         try:
             return {"source": "live", **json.loads(fresh.read_text())}
         except Exception:  # noqa: BLE001
             pass
-    snap = Path(__file__).parent / "edge" / "sim_snapshot.json"
+    snap = Path(__file__).parent / "edge" / f"sim_snapshot{suffix}.json"
     if snap.exists():
         try:
             return {"source": "snapshot", **json.loads(snap.read_text())}
