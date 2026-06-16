@@ -350,6 +350,41 @@ async def sim_run(window: str = "1y") -> dict:
     return {"source": "none", "trades": [], "metrics": {}}
 
 
+@app.get("/api/optimize")
+async def optimize_results() -> dict:
+    """Per-session optimizer results (#6): best config + deflated Sharpe + whether
+    it's robust (DSR≥95%). Drives the 'optimized' badge."""
+    snap = Path(__file__).parent / "edge" / "optimize_snapshot.json"
+    if snap.exists():
+        try:
+            return {"source": "snapshot", **json.loads(snap.read_text())}
+        except Exception:  # noqa: BLE001
+            pass
+    return {"source": "none", "sessions": {}}
+
+
+_ACTIVE_STRATEGY = Path("data/active_strategy.json")
+
+
+@app.get("/api/active-strategy")
+async def get_active_strategy() -> dict:
+    if _ACTIVE_STRATEGY.exists():
+        try:
+            return json.loads(_ACTIVE_STRATEGY.read_text())
+        except Exception:  # noqa: BLE001
+            pass
+    return {"active": None}
+
+
+@app.post("/api/active-strategy")
+async def set_active_strategy(payload: dict) -> dict:
+    """Persist the user's chosen 'active strategy' (the analyser's selection)."""
+    _ACTIVE_STRATEGY.parent.mkdir(parents=True, exist_ok=True)
+    rec = {"active": payload.get("active"), "label": payload.get("label", ""), "ts": time.time()}
+    _ACTIVE_STRATEGY.write_text(json.dumps(rec))
+    return {"ok": True, **rec}
+
+
 @app.get("/api/combos")
 async def combos_all() -> dict:
     """Named combos for the selector (each carries a full trade log). Prefers a

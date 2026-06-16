@@ -311,6 +311,28 @@ export interface SimRun {
   trades: SimTrade[];
 }
 
+export interface OptimizeSessionResult {
+  n_configs: number;
+  best_label: string;
+  best_sharpe: number;
+  deflated_sharpe: number;
+  robust: boolean;
+  note: string;
+  top: { label: string; daily_sharpe: number; expectancy_r: number; win_rate: number; profit_factor: number | null; n: number }[];
+}
+
+export interface OptimizeSnapshot {
+  source: string;
+  generated?: string;
+  sessions: Record<string, OptimizeSessionResult>;
+}
+
+export interface ActiveStrategy {
+  active: string | null;
+  label?: string;
+  ts?: number;
+}
+
 export interface CombosSnapshot {
   source: string;
   generated?: string;
