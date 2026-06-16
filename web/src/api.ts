@@ -48,6 +48,11 @@ export async function getCombo(window: string = "1y"): Promise<import("./types")
   return r.json();
 }
 
+export async function getCombos(): Promise<import("./types").CombosSnapshot> {
+  const r = await fetch("/api/combos");
+  return r.json();
+}
+
 export async function getTrades(): Promise<Trade[]> {
   const r = await fetch("/api/trades");
   return (await r.json()).trades ?? [];
