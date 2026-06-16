@@ -351,16 +351,16 @@ async def sim_run(window: str = "1y") -> dict:
 
 
 @app.get("/api/combo")
-async def combo_run() -> dict:
+async def combo_run(window: str = "1y") -> dict:
     """Multi-style combo: several strategy legs in one shared-capital book.
-    Prefers fresh data/combo_real.json on the volume, else the committed snapshot."""
-    fresh = Path("data/combo_real.json")
+    `window` = "1y" | "5y". Prefers a fresh run on the volume, else the snapshot."""
+    fresh = Path(f"data/combo{'_5y' if window == '5y' else '_real'}.json")
     if fresh.exists():
         try:
             return {"source": "live", **json.loads(fresh.read_text())}
         except Exception:  # noqa: BLE001
             pass
-    snap = Path(__file__).parent / "edge" / "combo_snapshot.json"
+    snap = Path(__file__).parent / "edge" / f"combo_snapshot{'_5y' if window == '5y' else ''}.json"
     if snap.exists():
         try:
             return {"source": "snapshot", **json.loads(snap.read_text())}

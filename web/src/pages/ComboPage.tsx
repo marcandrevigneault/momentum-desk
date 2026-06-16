@@ -25,14 +25,17 @@ function Stat({ label, value, color, sub }: { label: string; value: string; colo
 export default function ComboPage() {
   const [c, setC] = useState<ComboRun | null>(null);
   const [err, setErr] = useState(false);
+  const [win, setWin] = useState("1y");
 
   useEffect(() => {
-    getCombo().then(setC).catch(() => setErr(true));
-  }, []);
+    setC(null);
+    setErr(false);
+    getCombo(win).then(setC).catch(() => setErr(true));
+  }, [win]);
 
   if (err) return <div className="p-6 text-[13px]" style={{ color: "var(--red)" }}>Failed to load combo.</div>;
   if (!c) return <div className="p-6 text-[13px]" style={{ color: "var(--muted)" }}>Loading combo…</div>;
-  if (!c.trades?.length) return <div className="p-6 text-[13px]" style={{ color: "var(--muted)" }}>No combo has been run yet.</div>;
+  if (!c.daily_equity?.length) return <div className="p-6 text-[13px]" style={{ color: "var(--muted)" }}>No combo has been run yet.</div>;
 
   const m = c.metrics;
   const equity = c.daily_equity.map((d) => ({ date: d.date, equity: d.equity }));
@@ -45,6 +48,14 @@ export default function ComboPage() {
         <h2 className="text-[18px] font-bold m-0">Multi-style combo</h2>
         <span className="badge" style={{ color: "var(--muted)", borderColor: "var(--line)" }}>{c.source}</span>
         <span className="mono text-[11px]" style={{ color: "var(--muted)" }}>{c.legs.join(" + ")} · {c.days} days</span>
+        <div className="ml-auto flex rounded-md overflow-hidden" style={{ border: "1px solid var(--line)" }}>
+          {["1y", "5y"].map((w) => (
+            <button key={w} onClick={() => setWin(w)} className="mono text-[11px] px-3 py-1"
+              style={{ background: win === w ? "var(--panel-2)" : "transparent", color: win === w ? "var(--text)" : "var(--muted)" }}>
+              {w}
+            </button>
+          ))}
+        </div>
       </div>
       <p className="text-[12px] mb-4 max-w-3xl" style={{ color: "var(--muted)" }}>
         {c.config ?? "Several strategy legs share one account"} — shared equity, the concurrency cap and the

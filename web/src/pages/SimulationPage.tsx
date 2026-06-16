@@ -64,9 +64,11 @@ export default function SimulationPage() {
       </div>
       <p className="text-[12px] mb-4 max-w-3xl" style={{ color: "var(--muted)" }}>
         The assembled strategy run like a real book: detect candidates, size each by the risk engine
-        (risk-per-trade, the liquidity guard, the per-name cap), cap concurrent positions and the capital
-        deployed, exit on the {sim.exit_policy} stop, honour the daily-loss breaker, commissions and slippage.
-        This is the account-level result — not per-trade R.
+        (<b>1% of the book risked per trade</b>, capped at 25% of equity per name + the liquidity guard),
+        cap concurrent positions and the capital deployed, exit on the {sim.exit_policy} stop, honour the
+        daily-loss breaker, commissions and slippage. The trade log's <b>Size %</b> is each position's
+        notional as a % of the book. Sizing is <b>fixed</b> off the starting balance here (it does not
+        compound) — this is the account-level result, not per-trade R.
       </p>
 
       {/* headline stats */}
@@ -82,9 +84,10 @@ export default function SimulationPage() {
       {/* honest caveat + slippage sensitivity */}
       <div className="rounded-xl p-3 mb-5" style={{ border: "1px solid var(--amber)", background: "rgba(251,191,36,.05)" }}>
         <div className="text-[11px] mb-2" style={{ color: "var(--amber)" }}>
-          ⚠ The headline return is inflated by compounding risk on a growing account and optimistic fills
-          (0.3% slippage, <b>no halts modeled</b> — these names halt constantly). The trustworthy signal is the
-          expectancy and month-to-month consistency, not the dollar figure. Slippage sensitivity (same year):
+          ⚠ The headline % is large because it's measured against the small $25k base (sizing is <b>fixed</b>,
+          not compounding) and the fills are optimistic (0.3% slippage, <b>no halts modeled</b> — these names
+          halt constantly), plus universe survivorship. The trustworthy signal is the expectancy and
+          month-to-month consistency, not the dollar figure. Slippage sensitivity (same year):
         </div>
         {sim.stress && (
           <table className="w-full text-[12px] mono">
@@ -166,7 +169,9 @@ export default function SimulationPage() {
             <tr className="text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>
               <th className="text-left px-4 py-1.5">Day</th><th className="text-left">Sym</th>
               <th className="text-right">Entry</th><th className="text-right">Exit</th>
-              <th className="text-right">Shares</th><th className="text-right">P&amp;L</th>
+              <th className="text-right">Shares</th>
+              <th className="text-right" title="position notional as % of the starting book">Size %</th>
+              <th className="text-right">P&amp;L</th>
               <th className="text-right">R</th><th className="text-left px-3">Exit</th>
             </tr>
           </thead>
@@ -178,6 +183,7 @@ export default function SimulationPage() {
                 <td className="text-right mono">${t.entry.toFixed(2)}</td>
                 <td className="text-right mono">${t.exit.toFixed(2)}</td>
                 <td className="text-right mono" style={{ color: "var(--muted)" }}>{t.shares}</td>
+                <td className="text-right mono" style={{ color: "var(--muted)" }}>{((t.shares * t.entry / sim.starting_equity) * 100).toFixed(1)}%</td>
                 <td className="text-right mono" style={{ color: rColor(t.pnl) }}>{money(t.pnl)}</td>
                 <td className="text-right mono" style={{ color: rColor(t.r_multiple) }}>{t.r_multiple >= 0 ? "+" : ""}{t.r_multiple.toFixed(2)}</td>
                 <td className="px-3 mono text-[11px]" style={{ color: "var(--muted)" }}>{t.exit_reason}</td>

@@ -43,8 +43,8 @@ export async function getSimRun(window: string = "1y"): Promise<import("./types"
   return r.json();
 }
 
-export async function getCombo(): Promise<import("./types").ComboRun> {
-  const r = await fetch("/api/combo");
+export async function getCombo(window: string = "1y"): Promise<import("./types").ComboRun> {
+  const r = await fetch(`/api/combo?window=${window}`);
   return r.json();
 }
 
