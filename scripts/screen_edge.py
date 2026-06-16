@@ -35,12 +35,11 @@ def _print_screen(res) -> None:
     if not res.n_events:
         print("  (no events — check universe / data)")
         return
-    print(f"  {'feature':<20} {'kind':<8} {'n':>5} {'IC':>7} {'botR':>7} {'topR':>7} {'spread':>7}")
+    # IC = vs recent-low-stop R (confounded); ICfix = vs FIXED-% stop (H4, trustworthy);
+    # ICret = vs raw % return. Ranked by |ICfix|.
+    print(f"  {'feature':<20} {'kind':<8} {'n':>5} {'IC':>7} {'ICfix':>7} {'ICret':>7}")
     for f in res.features:
-        bot = f.deciles[0].mean_fwd_r if f.deciles else 0.0
-        top = f.deciles[-1].mean_fwd_r if f.deciles else 0.0
-        print(f"  {f.name:<20} {f.kind:<8} {f.n:>5} {f.ic:>+7.3f} "
-              f"{bot:>+7.3f} {top:>+7.3f} {f.lift_spread:>+7.3f}")
+        print(f"  {f.name:<20} {f.kind:<8} {f.n:>5} {f.ic:>+7.3f} {f.ic_fixed:>+7.3f} {f.ic_ret:>+7.3f}")
 
 
 def main() -> None:
