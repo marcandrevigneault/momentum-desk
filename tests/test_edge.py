@@ -47,4 +47,14 @@ def test_run_screen_end_to_end():
     assert res.features, "expected at least one screened feature"
     for f in res.features:
         assert -1.0 <= f.ic <= 1.0
+        assert -1.0 <= f.ic_fixed <= 1.0   # H4: geometry-controlled IC present and valid
         assert f.n >= 10
+
+
+def test_fixed_stop_outcome_constant_risk():
+    """H4: the fixed-% stop outcome must not depend on the recent-low stop, so a
+    deep-vs-shallow entry no longer biases R purely through stop distance."""
+    from momentum_desk.edge.screen import _forward_fixed
+    bars = [_bar(1, 10, 12.0, 10, 11.9, 575)]   # rises to +2R on a 5% stop (target = 10*1.10)
+    r, ret = _forward_fixed(10.0, bars, stop_pct=5.0, target_r=2.0)
+    assert r == 2.0 and abs(ret - 10.0) < 1e-9   # +2R == +10% with a 5% stop

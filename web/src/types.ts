@@ -154,7 +154,9 @@ export interface EdgeFeature {
   kind: string;        // "static" | "dynamic"
   desc: string;
   n: number;
-  ic: number;          // Spearman rank correlation with forward R
+  ic: number;          // Spearman IC vs standardized R (recent-low stop, confounded)
+  ic_fixed: number;    // H4: IC vs FIXED-% stop (geometry-controlled — trustworthy)
+  ic_ret: number;      // H4: IC vs raw forward % return (rank-equivalent to ic_fixed)
   lift_spread: number; // top-decile mean R minus bottom-decile mean R
   deciles: EdgeDecile[];
 }

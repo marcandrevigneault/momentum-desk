@@ -49,31 +49,25 @@ function SessionCard({ s }: { s: EdgeSessionScreen }) {
         <thead>
           <tr className="text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>
             <th className="text-left px-4 py-2">Feature</th>
-            <th className="text-right px-2">IC</th>
-            <th className="text-right px-2">bot R</th>
-            <th className="text-right px-2">top R</th>
+            <th className="text-right px-2" title="IC vs standardized R (recent-low stop — confounded by stop distance)">IC raw</th>
+            <th className="text-right px-2" title="IC vs a FIXED-% stop — geometry-controlled, the trustworthy signal (H4 fix)">IC fixed</th>
             <th className="text-left px-3">deciles (low→high)</th>
           </tr>
         </thead>
         <tbody>
-          {s.features.map((f) => {
-            const bot = f.deciles[0]?.mean_fwd_r ?? 0;
-            const top = f.deciles[f.deciles.length - 1]?.mean_fwd_r ?? 0;
-            return (
-              <tr key={f.name} style={{ borderTop: "1px solid var(--line)" }} title={f.desc}>
-                <td className="px-4 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="mono font-semibold">{f.name}</span>
-                    <span className="text-[9px] px-1 rounded" style={{ border: "1px solid var(--line)", color: "var(--muted)" }}>{f.kind}</span>
-                  </div>
-                </td>
-                <td className="text-right px-2 mono font-bold" style={{ background: icColor(f.ic) }}>{fmt(f.ic, 2)}</td>
-                <td className="text-right px-2 mono" style={{ color: rColor(bot) }}>{fmt(bot)}</td>
-                <td className="text-right px-2 mono" style={{ color: rColor(top) }}>{fmt(top)}</td>
-                <td className="px-3 py-1"><DecileSpark f={f} /></td>
-              </tr>
-            );
-          })}
+          {s.features.map((f) => (
+            <tr key={f.name} style={{ borderTop: "1px solid var(--line)" }} title={f.desc}>
+              <td className="px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="mono font-semibold">{f.name}</span>
+                  <span className="text-[9px] px-1 rounded" style={{ border: "1px solid var(--line)", color: "var(--muted)" }}>{f.kind}</span>
+                </div>
+              </td>
+              <td className="text-right px-2 mono" style={{ color: "var(--muted)" }}>{fmt(f.ic, 2)}</td>
+              <td className="text-right px-2 mono font-bold" style={{ background: icColor(f.ic_fixed ?? f.ic) }}>{fmt(f.ic_fixed ?? f.ic, 2)}</td>
+              <td className="px-3 py-1"><DecileSpark f={f} /></td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -103,10 +97,11 @@ export default function EdgePage() {
       <p className="text-[12px] mb-4 max-w-3xl" style={{ color: "var(--muted)" }}>
         Univariate screen over {edge.days ?? "?"} days of {edge.data ?? "real"} data
         {edge.generated ? ` (generated ${edge.generated})` : ""}. For each variable: the Spearman
-        information coefficient (rank correlation with forward R, green = higher value → better,
-        red = worse) and the mean forward R in its bottom vs top decile. The entry trigger and exit
-        are held fixed, so this measures <i>entry quality</i>. Univariate only — correlated features
-        can't be summed; multivariate and significance testing come in later phases.
+        information coefficient (rank correlation with forward return; green = higher value → better,
+        red = worse). <b>IC raw</b> uses a recent-low stop (risk varies with how extended the entry is);
+        <b>IC fixed</b> uses a constant-% stop so the result isn't an artifact of stop distance — it's the
+        trustworthy one, and features are ranked by it. The two agreeing (e.g. ext_vwap, rvol) means the
+        signal is real, not geometry. Univariate only; correlated features can't be summed.
       </p>
       <div className="grid gap-5" style={{ gridTemplateColumns: sessions.length > 1 ? "1fr 1fr" : "1fr" }}>
         {sessions.map((s) => <SessionCard key={s.session} s={s} />)}
