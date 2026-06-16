@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
-from ..backtest.data import HistoricalProvider, Trade
+from ..backtest.data import MARKET_OPEN_TOD, HistoricalProvider, MinuteBar, Trade
 from ..backtest.engine import Backtester
 from ..models import Snapshot
 from ..risk import RiskConfig, RiskEngine
-from .exits import simulate_exit_detail
+from .exits import simulate_exit_detail, simulate_fade_detail
 from .portfolio import SimTrade, _book_due, _monthly, _policy
 from .screen import ScreenConfig, _find_event, _passes_gate
 
@@ -32,6 +32,43 @@ class ComboLeg:
     slippage_pct: float = 0.3
     max_ext_pct: float | None = None    # optional entry filters (from the screen findings)
     rvol_max: float | None = None
+    # --- style: "momentum" (long breakout) | "fade" (short the blow-off top) ---
+    style: str = "momentum"
+    fade_min_move_pct: float = 15.0     # only fade names already this extended from the open
+    fade_min_ext_pct: float = 8.0       # ...and this far above VWAP at the reversal candle
+    fade_stop_buffer_pct: float = 0.5   # short stop = high-of-day + this %
+
+
+def _find_fade_event(bars: list[MinuteBar], leg: ComboLeg) -> tuple[int, float, float, list[MinuteBar]] | None:
+    """Mean-reversion SHORT trigger: a name that has run hard off the open and is
+    extended above VWAP, on its first reversal candle (a red bar). Point-in-time —
+    only bars up to the reversal decide entry; the high-of-day is the stop."""
+    reg = [b for b in bars if b.tod >= MARKET_OPEN_TOD]
+    base = 5
+    if len(reg) <= base + 2:
+        return None
+    start_abs = len(bars) - len(reg)
+    open_px = reg[0].o
+    if open_px <= 0:
+        return None
+    hod = max(b.h for b in reg[:base])
+    for j in range(base, len(reg)):
+        b = reg[j]
+        if b.tod >= 660:          # no new fades after 11:00
+            break
+        hod = max(hod, b.h)
+        move = 100.0 * (hod - open_px) / open_px
+        ext = 100.0 * (b.c - b.vwap) / b.vwap if b.vwap > 0 else 0.0
+        reversal = b.c < b.o      # red candle = first sign of exhaustion
+        if move >= leg.fade_min_move_pct and ext >= leg.fade_min_ext_pct and reversal:
+            entry = b.c            # short the close of the reversal bar
+            stop = hod * (1 + leg.fade_stop_buffer_pct / 100.0)
+            if stop <= entry:
+                return None
+            deadline = 660 + 60
+            fwd = [x for x in reg[j + 1:] if x.tod <= deadline]
+            return start_abs + j, entry, stop, fwd
+    return None
 
 
 @dataclass
@@ -61,9 +98,12 @@ class ComboResult:
 
 
 def _leg_day_pots(leg: ComboLeg, day: str) -> list[tuple]:
-    """A leg's potential trades for one day: (entry_tod, entry, stop, fill, snap, symbol, leg)."""
+    """A leg's potential trades for one day:
+    (entry_tod, entry, stop, fill, snap, symbol, leg, side)."""
     screen = ScreenConfig(session=leg.session)
     policy = _policy(leg.exit_policy)
+    is_fade = leg.style == "fade"
+    side = "short" if is_fade else "long"
     pots = []
     for cand in leg.provider.candidates(day):
         if not _passes_gate(cand, screen):
@@ -71,24 +111,26 @@ def _leg_day_pots(leg: ComboLeg, day: str) -> list[tuple]:
         bars = leg.provider.minutes(cand.symbol, day)
         if not bars:
             continue
-        ev = _find_event(bars, screen)
+        ev = _find_fade_event(bars, leg) if is_fade else _find_event(bars, screen)
         if ev is None:
             continue
         entry_idx, entry, stop, fwd = ev
-        if entry - stop <= 0 or not fwd:
+        if not fwd:
             continue
         eb = bars[entry_idx]
-        ext = 100.0 * (entry - eb.vwap) / eb.vwap if eb.vwap > 0 else 0.0
-        rvol = eb.cum_volume / cand.avg_volume_20d if cand.avg_volume_20d > 0 else 0.0
-        if leg.max_ext_pct is not None and ext > leg.max_ext_pct:
-            continue
-        if leg.rvol_max is not None and rvol > leg.rvol_max:
-            continue
-        fill = simulate_exit_detail(entry, stop, bars[: entry_idx + 1], fwd, policy, leg.slippage_pct)
+        if not is_fade:
+            ext = 100.0 * (entry - eb.vwap) / eb.vwap if eb.vwap > 0 else 0.0
+            rvol = eb.cum_volume / cand.avg_volume_20d if cand.avg_volume_20d > 0 else 0.0
+            if leg.max_ext_pct is not None and ext > leg.max_ext_pct:
+                continue
+            if leg.rvol_max is not None and rvol > leg.rvol_max:
+                continue
+        sim = simulate_fade_detail if is_fade else simulate_exit_detail
+        fill = sim(entry, stop, bars[: entry_idx + 1], fwd, policy, leg.slippage_pct)
         snap = Snapshot(symbol=cand.symbol, last=entry, prev_close=cand.prev_close,
                         day_open=cand.day_open, vwap=eb.vwap, cum_volume=eb.cum_volume,
                         avg_volume_20d=cand.avg_volume_20d, float_shares=cand.float_shares)
-        pots.append((eb.tod, entry, stop, fill, snap, cand.symbol, leg.name))
+        pots.append((eb.tod, entry, stop, fill, snap, cand.symbol, leg.name, side))
     return pots
 
 
@@ -115,7 +157,7 @@ def run_combo(legs: list[ComboLeg], ccfg: ComboConfig | None = None,
         pots.sort(key=lambda x: x[0])   # chronological across all legs
 
         open_pos: list[dict] = []
-        for (etod, entry, stop, fill, snap, sym, legname) in pots:
+        for (etod, entry, stop, fill, snap, sym, legname, side) in pots:
             due, open_pos = _book_due(open_pos, etod)
             for op in due:
                 equity += op["pnl"]
@@ -127,14 +169,16 @@ def run_combo(legs: list[ComboLeg], ccfg: ComboConfig | None = None,
             if len(open_pos) >= ccfg.max_concurrent:
                 n_skip += 1
                 continue
-            plan = risk.plan(snap, entry=entry, stop=stop)
+            plan = risk.plan(snap, entry=entry, stop=stop, side=side)
             if not plan.ok or plan.shares <= 0:
                 continue
             notional = plan.shares * entry
             if sum(o["notional"] for o in open_pos) + notional > equity * ccfg.max_gross_pct / 100.0:
                 n_skip += 1
                 continue
-            gross = (fill.exit_price - entry) * plan.shares
+            # short fade profits when price falls: (entry - exit); long: (exit - entry)
+            move = (entry - fill.exit_price) if side == "short" else (fill.exit_price - entry)
+            gross = move * plan.shares
             commission = 2.0 * max(ccfg.commission_min, plan.shares * ccfg.commission_per_share)
             pnl = gross - commission
             r = pnl / plan.risk_dollars if plan.risk_dollars > 0 else 0.0

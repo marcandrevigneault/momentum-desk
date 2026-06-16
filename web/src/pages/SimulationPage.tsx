@@ -25,10 +25,15 @@ function Stat({ label, value, color, sub }: { label: string; value: string; colo
 export default function SimulationPage() {
   const [sim, setSim] = useState<SimRun | null>(null);
   const [err, setErr] = useState(false);
+  const [win, setWin] = useState("1y");
+  const [month, setMonth] = useState<string | null>(null);
 
   useEffect(() => {
-    getSimRun().then(setSim).catch(() => setErr(true));
-  }, []);
+    setSim(null);
+    setErr(false);
+    setMonth(null);
+    getSimRun(win).then(setSim).catch(() => setErr(true));
+  }, [win]);
 
   if (err) return <div className="p-6 text-[13px]" style={{ color: "var(--red)" }}>Failed to load simulation.</div>;
   if (!sim) return <div className="p-6 text-[13px]" style={{ color: "var(--muted)" }}>Loading simulation…</div>;
@@ -37,13 +42,25 @@ export default function SimulationPage() {
   const m = sim.metrics;
   const equity = sim.daily_equity.map((d) => ({ date: d.date, equity: d.equity }));
   const fillRate = sim.n_signals ? sim.n_taken / sim.n_signals : 0;
+  // month-filtered trades when a month bar is clicked, else the most recent 40
+  const shown = month
+    ? sim.trades.filter((t) => t.day.startsWith(month)).slice().reverse()
+    : sim.trades.slice(-40).reverse();
 
   return (
     <div className="h-full overflow-auto p-5">
       <div className="flex items-center gap-3 mb-1">
-        <h2 className="text-[18px] font-bold m-0">Full-year simulation</h2>
+        <h2 className="text-[18px] font-bold m-0">Account simulation</h2>
         <span className="badge" style={{ color: "var(--muted)", borderColor: "var(--line)" }}>{sim.source}</span>
         <span className="mono text-[11px]" style={{ color: "var(--muted)" }}>{sim.session} · {sim.exit_policy} · {sim.days} days</span>
+        <div className="ml-auto flex rounded-md overflow-hidden" style={{ border: "1px solid var(--line)" }}>
+          {["1y", "5y"].map((w) => (
+            <button key={w} onClick={() => setWin(w)} className="mono text-[11px] px-3 py-1"
+              style={{ background: win === w ? "var(--panel-2)" : "transparent", color: win === w ? "var(--text)" : "var(--muted)" }}>
+              {w}
+            </button>
+          ))}
+        </div>
       </div>
       <p className="text-[12px] mb-4 max-w-3xl" style={{ color: "var(--muted)" }}>
         The assembled strategy run like a real book: detect candidates, size each by the risk engine
@@ -115,9 +132,11 @@ export default function SimulationPage() {
         </ResponsiveContainer>
       </div>
 
-      {/* monthly P&L */}
+      {/* monthly P&L — click a month to see its trades */}
       <div className="rounded-xl p-3 mb-5" style={{ border: "1px solid var(--line)", height: 220 }}>
-        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Monthly P&amp;L</div>
+        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>
+          Monthly P&amp;L <span style={{ opacity: 0.6 }}>· click a bar to see that month's trades</span>
+        </div>
         <ResponsiveContainer width="100%" height="88%">
           <BarChart data={sim.monthly} margin={{ top: 6, right: 12, bottom: 0, left: 8 }}>
             <CartesianGrid stroke="#1c2230" vertical={false} />
@@ -125,17 +144,22 @@ export default function SimulationPage() {
             <YAxis tick={{ fill: "#8b949e", fontSize: 10 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} width={48} />
             <Tooltip contentStyle={{ background: "#0d1117", border: "1px solid #283040", fontSize: 12 }}
               formatter={(v: number) => money(v)} cursor={{ fill: "rgba(255,255,255,.04)" }} />
-            <Bar dataKey="pnl">
-              {sim.monthly.map((r, i) => <Cell key={i} fill={r.pnl >= 0 ? "#34d399" : "#f87171"} />)}
+            <Bar dataKey="pnl" cursor="pointer"
+              onClick={(d: { period?: string }) => setMonth((cur) => (cur === d.period ? null : d.period ?? null))}>
+              {sim.monthly.map((r, i) => (
+                <Cell key={i} fill={r.pnl >= 0 ? "#34d399" : "#f87171"}
+                  fillOpacity={month && r.period !== month ? 0.3 : 1} />
+              ))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* trade log (most recent) */}
+      {/* trade log — month-filtered when a month is selected */}
       <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--line)" }}>
-        <div className="px-4 py-2 text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)", background: "var(--panel)" }}>
-          Trades (last 40 of {sim.trades.length})
+        <div className="px-4 py-2 text-[10px] uppercase tracking-wider flex items-center gap-3" style={{ color: "var(--muted)", background: "var(--panel)" }}>
+          {month ? <span style={{ color: "var(--text)" }}>Trades · {month} ({shown.length})</span> : <span>Trades (last 40 of {sim.trades.length})</span>}
+          {month && <button onClick={() => setMonth(null)} className="text-[10px] px-2 rounded" style={{ border: "1px solid var(--line)" }}>clear ✕</button>}
         </div>
         <table className="w-full text-[12px]">
           <thead>
@@ -147,7 +171,7 @@ export default function SimulationPage() {
             </tr>
           </thead>
           <tbody>
-            {sim.trades.slice(-40).reverse().map((t, i) => (
+            {shown.map((t, i) => (
               <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
                 <td className="px-4 py-1 mono" style={{ color: "var(--muted)" }}>{t.day}</td>
                 <td className="mono font-semibold">{t.symbol}</td>

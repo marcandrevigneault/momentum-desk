@@ -38,8 +38,8 @@ export async function getGauntlet(): Promise<import("./types").Gauntlet> {
   return r.json();
 }
 
-export async function getSimRun(): Promise<import("./types").SimRun> {
-  const r = await fetch("/api/simrun");
+export async function getSimRun(window: string = "1y"): Promise<import("./types").SimRun> {
+  const r = await fetch(`/api/simrun?window=${window}`);
   return r.json();
 }
 

@@ -40,6 +40,10 @@ def main() -> None:
                  session="premarket", exit_policy="pct_trail_10"),
         ComboLeg(name="intraday", provider=_provider(args.data, "intraday", args.days),
                  session="intraday", exit_policy="pct_trail_10", rvol_max=20.0),
+        # mean-reversion SHORT: fade the blow-off top on the most-extended runners
+        # (wider slippage — shorting thin low-floats is hard-to-borrow + gappy)
+        ComboLeg(name="fade", provider=_provider(args.data, "intraday", args.days),
+                 session="intraday", style="fade", exit_policy="pct_trail_10", slippage_pct=0.5),
     ]
     res = run_combo(legs, ComboConfig(max_concurrent=args.max_concurrent),
                     RiskConfig(account_equity=args.equity))

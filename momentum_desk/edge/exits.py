@@ -143,6 +143,51 @@ def simulate_exit(
     return f.r, f.reason, f.bars_held
 
 
+def simulate_fade_detail(
+    entry: float, init_stop: float, prior_bars: list[MinuteBar], fwd: list[MinuteBar],
+    policy: ExitPolicy, slippage_pct: float,
+) -> ExitFill:
+    """SHORT (mean-reversion fade) exit — the mirror of simulate_exit_detail. The
+    stop sits ABOVE entry; profit is to the downside; a %/ATR trail ratchets DOWN
+    behind the low-water mark; slippage is adverse on a short (you cover higher).
+    R = (entry - exit) / risk, risk = init_stop - entry."""
+    risk = init_stop - entry
+    if risk <= 0 or not fwd:
+        return ExitFill(0.0, "void", 0, entry, fwd[0].tod if fwd else 0)
+    slip = slippage_pct / 100.0
+    target = entry - policy.target_r * risk if policy.target_r is not None else None
+    atr = _atr(prior_bars[-14:]) if policy.trail_kind == "atr" else 0.0
+    low_water = entry  # best (lowest) price seen, updated at each bar's close
+
+    def fill(px: float, reason: str, b: MinuteBar, i: int) -> ExitFill:
+        return ExitFill((entry - px) / risk, reason, i + 1, px, b.tod)
+
+    for i, b in enumerate(fwd):
+        eff_stop = init_stop
+        if policy.trail_kind == "pct":
+            eff_stop = min(eff_stop, low_water * (1 + policy.trail_param / 100.0))
+        elif policy.trail_kind == "atr" and atr > 0:
+            eff_stop = min(eff_stop, low_water + policy.trail_param * atr)
+        elif policy.trail_kind == "structure":
+            look = int(policy.trail_param)
+            window = fwd[max(0, i - look):i]
+            if window:
+                eff_stop = min(eff_stop, max(x.h for x in window))
+
+        if b.h >= eff_stop:                                   # stop / trail first (pessimistic), cover higher
+            reason = "stop" if eff_stop == init_stop else "trail"
+            return fill(eff_stop * (1 + slip), reason, b, i)
+        if target is not None and b.l <= target:
+            return fill(target * (1 + slip), "target", b, i)
+        if policy.vwap_loss and b.vwap > 0 and b.c > b.vwap:  # reversion done — back above VWAP
+            return fill(b.c * (1 + slip), "vwap", b, i)
+
+        low_water = min(low_water, b.l)
+
+    last = fwd[-1]
+    return fill(last.c * (1 + slip), "time", last, len(fwd) - 1)
+
+
 def _metrics(policy: ExitPolicy, rs: list[float], holds: list[int], reasons: list[str]) -> ExitMetrics:
     m = ExitMetrics(policy=policy.name, desc=policy.desc, n=len(rs))
     if not rs:

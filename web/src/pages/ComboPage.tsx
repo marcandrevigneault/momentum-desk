@@ -124,7 +124,9 @@ export default function ComboPage() {
 
       <p className="text-[11px] mono" style={{ color: "var(--muted)" }}>
         Multi-style diversifies <i>style</i> risk, not the structural caveats (fat tails, no halts modeled,
-        universe survivorship). The headline return is an upper bound. Not advice.
+        universe survivorship). A <b>fade</b> leg is short — and shorting thin low-floats is often
+        hard-to-borrow / recallable, so its real-world fills are worse than modeled. The headline return is an
+        upper bound. Not advice.
       </p>
     </div>
   );
