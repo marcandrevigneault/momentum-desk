@@ -43,6 +43,11 @@ export async function getSimRun(): Promise<import("./types").SimRun> {
   return r.json();
 }
 
+export async function getCombo(): Promise<import("./types").ComboRun> {
+  const r = await fetch("/api/combo");
+  return r.json();
+}
+
 export async function getTrades(): Promise<Trade[]> {
   const r = await fetch("/api/trades");
   return (await r.json()).trades ?? [];

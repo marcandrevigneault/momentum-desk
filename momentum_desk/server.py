@@ -348,6 +348,25 @@ async def sim_run() -> dict:
     return {"source": "none", "trades": [], "metrics": {}}
 
 
+@app.get("/api/combo")
+async def combo_run() -> dict:
+    """Multi-style combo: several strategy legs in one shared-capital book.
+    Prefers fresh data/combo_real.json on the volume, else the committed snapshot."""
+    fresh = Path("data/combo_real.json")
+    if fresh.exists():
+        try:
+            return {"source": "live", **json.loads(fresh.read_text())}
+        except Exception:  # noqa: BLE001
+            pass
+    snap = Path(__file__).parent / "edge" / "combo_snapshot.json"
+    if snap.exists():
+        try:
+            return {"source": "snapshot", **json.loads(snap.read_text())}
+        except Exception:  # noqa: BLE001
+            pass
+    return {"source": "none", "trades": [], "metrics": {}, "legs": []}
+
+
 @app.get("/api/gauntlet")
 async def gauntlet() -> dict:
     """Phase-3 evaluation gauntlet: the candidate strategy's verdict per session
