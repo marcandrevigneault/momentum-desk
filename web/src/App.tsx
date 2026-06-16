@@ -5,8 +5,9 @@ import EdgePage from "./pages/EdgePage";
 import ExitLabPage from "./pages/ExitLabPage";
 import GauntletPage from "./pages/GauntletPage";
 import SimulationPage from "./pages/SimulationPage";
+import ComboPage from "./pages/ComboPage";
 
-type Page = "cockpit" | "backtester" | "edge" | "exits" | "gauntlet" | "simulation";
+type Page = "cockpit" | "backtester" | "edge" | "exits" | "gauntlet" | "simulation" | "combo";
 
 const NAV: { id: Page; label: string; icon: string; hint: string }[] = [
   { id: "cockpit", label: "Cockpit", icon: "▦", hint: "live scanner, charts, paper trading" },
@@ -15,6 +16,7 @@ const NAV: { id: Page; label: string; icon: string; hint: string }[] = [
   { id: "exits", label: "Exit lab", icon: "🚪", hint: "compare exit policies head-to-head" },
   { id: "gauntlet", label: "Gauntlet", icon: "⚖️", hint: "does the edge survive honest scrutiny" },
   { id: "simulation", label: "Simulation", icon: "💹", hint: "full-year account simulation" },
+  { id: "combo", label: "Combo", icon: "🧬", hint: "multi-style shared-capital book" },
 ];
 
 export default function App() {
@@ -77,7 +79,7 @@ export default function App() {
 
       {/* active page */}
       <div className="grow min-h-0">
-        {page === "cockpit" ? <CockpitPage /> : page === "backtester" ? <BacktesterPage /> : page === "edge" ? <EdgePage /> : page === "exits" ? <ExitLabPage /> : page === "gauntlet" ? <GauntletPage /> : <SimulationPage />}
+        {page === "cockpit" ? <CockpitPage /> : page === "backtester" ? <BacktesterPage /> : page === "edge" ? <EdgePage /> : page === "exits" ? <ExitLabPage /> : page === "gauntlet" ? <GauntletPage /> : page === "simulation" ? <SimulationPage /> : <ComboPage />}
       </div>
     </div>
   );

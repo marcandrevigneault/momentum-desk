@@ -311,6 +311,26 @@ export interface SimRun {
   trades: SimTrade[];
 }
 
+export interface ComboRun {
+  source: string;
+  generated?: string;
+  config?: string;
+  legs: string[];
+  days: number;
+  starting_equity: number;
+  final_equity: number;
+  n_signals: number;
+  n_taken: number;
+  n_skipped_capacity: number;
+  metrics: BacktestMetrics;
+  leg_pnl: Record<string, number>;
+  leg_trades: Record<string, number>;
+  equity_curve: number[];
+  daily_equity: SimDailyEquity[];
+  monthly: PeriodRow[];
+  trades: SimTrade[];
+}
+
 export interface BacktestRun {
   synthetic: boolean;
   session: string;
