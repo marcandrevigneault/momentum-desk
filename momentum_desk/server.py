@@ -330,12 +330,13 @@ async def edge_screen() -> dict:
 
 
 @app.get("/api/simrun")
-async def sim_run(window: str = "1y") -> dict:
+async def sim_run(window: str = "1y", compound: bool = False) -> dict:
     """Full end-to-end account simulation. `window` selects the horizon: "1y"
-    (last year) or "5y" (last five years). Prefers a fresh run on the volume,
+    (last year) or "5y" (last five years). `compound` sizes risk off the live
+    book instead of the fixed start balance. Prefers a fresh run on the volume,
     else the committed snapshot."""
-    suffix = "_5y" if window == "5y" else ""
-    fresh = Path(f"data/sim{'_5y' if window == '5y' else '_year'}.json")
+    suffix = ("_5y" if window == "5y" else "") + ("_c" if compound else "")
+    fresh = Path(f"data/sim{'_5y' if window == '5y' else '_year'}{'_c' if compound else ''}.json")
     if fresh.exists():
         try:
             return {"source": "live", **json.loads(fresh.read_text())}
@@ -455,16 +456,17 @@ async def set_active_strategy(payload: dict) -> dict:
 
 
 @app.get("/api/combos")
-async def combos_all() -> dict:
-    """Named combos for the selector (each carries a full trade log). Prefers a
-    fresh data/combos.json on the volume, else the committed snapshot."""
-    fresh = Path("data/combos.json")
+async def combos_all(window: str = "1y") -> dict:
+    """Named combos for the selector (each carries a full trade log). `window` =
+    1y | 5y. Prefers a fresh file on the volume, else the committed snapshot."""
+    suffix = "_5y" if window == "5y" else ""
+    fresh = Path(f"data/combos{suffix}.json")
     if fresh.exists():
         try:
             return {"source": "live", **json.loads(fresh.read_text())}
         except Exception:  # noqa: BLE001
             pass
-    snap = Path(__file__).parent / "edge" / "combos_snapshot.json"
+    snap = Path(__file__).parent / "edge" / f"combos_snapshot{suffix}.json"
     if snap.exists():
         try:
             return {"source": "snapshot", **json.loads(snap.read_text())}

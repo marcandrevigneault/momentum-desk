@@ -96,6 +96,7 @@ class Backtester:
                     continue
                 risk.record_fill(trade.pnl)
                 equity += trade.pnl
+                risk.mark_equity(equity)
                 curve.append(equity)
                 trades.append(trade)
 

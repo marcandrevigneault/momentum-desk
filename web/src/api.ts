@@ -38,8 +38,8 @@ export async function getGauntlet(): Promise<import("./types").Gauntlet> {
   return r.json();
 }
 
-export async function getSimRun(window: string = "1y"): Promise<import("./types").SimRun> {
-  const r = await fetch(`/api/simrun?window=${window}`);
+export async function getSimRun(window: string = "1y", compound = false): Promise<import("./types").SimRun> {
+  const r = await fetch(`/api/simrun?window=${window}&compound=${compound}`);
   return r.json();
 }
 
@@ -48,8 +48,8 @@ export async function getCombo(window: string = "1y"): Promise<import("./types")
   return r.json();
 }
 
-export async function getCombos(): Promise<import("./types").CombosSnapshot> {
-  const r = await fetch("/api/combos");
+export async function getCombos(window: string = "1y"): Promise<import("./types").CombosSnapshot> {
+  const r = await fetch(`/api/combos?window=${window}`);
   return r.json();
 }
 

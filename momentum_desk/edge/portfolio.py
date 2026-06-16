@@ -157,6 +157,7 @@ def run_simulation(provider, scfg: SimConfig | None = None,
             for op in due:
                 equity += op["pnl"]
                 risk.record_fill(op["pnl"])
+                risk.mark_equity(equity)
                 curve.append(round(equity, 2))
             if risk.daily_loss_limit_hit:
                 continue
@@ -186,6 +187,7 @@ def run_simulation(provider, scfg: SimConfig | None = None,
         for op in due:
             equity += op["pnl"]
             risk.record_fill(op["pnl"])
+            risk.mark_equity(equity)
             curve.append(round(equity, 2))
         daily.append({"date": day, "equity": round(equity, 2)})
 
