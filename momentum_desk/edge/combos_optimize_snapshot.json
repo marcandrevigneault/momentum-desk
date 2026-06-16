@@ -1,0 +1,229 @@
+{
+  "generated": "2026-06-16",
+  "days": 252,
+  "results": [
+    {
+      "combo": "intraday",
+      "intraday_exit": "fixed_3r",
+      "max_concurrent": 8,
+      "final_equity": 172884.28,
+      "profit_factor": 2.2,
+      "expectancy_r": 0.744,
+      "max_drawdown_pct": 1.6,
+      "daily_sharpe": 0.7457
+    },
+    {
+      "combo": "intraday",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 8,
+      "final_equity": 221764.06,
+      "profit_factor": 2.92,
+      "expectancy_r": 1.307,
+      "max_drawdown_pct": 1.09,
+      "daily_sharpe": 0.7447
+    },
+    {
+      "combo": "intraday",
+      "intraday_exit": "fixed_3r",
+      "max_concurrent": 5,
+      "final_equity": 155635.36,
+      "profit_factor": 2.3,
+      "expectancy_r": 0.756,
+      "max_drawdown_pct": 1.79,
+      "daily_sharpe": 0.72
+    },
+    {
+      "combo": "intraday",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 5,
+      "final_equity": 199981.98,
+      "profit_factor": 2.99,
+      "expectancy_r": 1.31,
+      "max_drawdown_pct": 1.18,
+      "daily_sharpe": 0.695
+    },
+    {
+      "combo": "premkt_intraday",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 8,
+      "final_equity": 307044.73,
+      "profit_factor": 2.21,
+      "expectancy_r": 0.79,
+      "max_drawdown_pct": 1.42,
+      "daily_sharpe": 0.6392
+    },
+    {
+      "combo": "premkt_intraday",
+      "intraday_exit": "fixed_3r",
+      "max_concurrent": 8,
+      "final_equity": 267457.51,
+      "profit_factor": 1.97,
+      "expectancy_r": 0.587,
+      "max_drawdown_pct": 2.1,
+      "daily_sharpe": 0.6108
+    },
+    {
+      "combo": "intraday",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 3,
+      "final_equity": 147040.05,
+      "profit_factor": 2.98,
+      "expectancy_r": 1.308,
+      "max_drawdown_pct": 1.37,
+      "daily_sharpe": 0.602
+    },
+    {
+      "combo": "three_leg",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 8,
+      "final_equity": 270998.55,
+      "profit_factor": 1.82,
+      "expectancy_r": 0.649,
+      "max_drawdown_pct": 1.85,
+      "daily_sharpe": 0.5833
+    },
+    {
+      "combo": "premkt_intraday",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 5,
+      "final_equity": 254547.09,
+      "profit_factor": 2.12,
+      "expectancy_r": 0.733,
+      "max_drawdown_pct": 1.63,
+      "daily_sharpe": 0.5789
+    },
+    {
+      "combo": "intraday",
+      "intraday_exit": "fixed_3r",
+      "max_concurrent": 3,
+      "final_equity": 115522.89,
+      "profit_factor": 2.28,
+      "expectancy_r": 0.731,
+      "max_drawdown_pct": 2.57,
+      "daily_sharpe": 0.5759
+    },
+    {
+      "combo": "premkt_intraday",
+      "intraday_exit": "fixed_3r",
+      "max_concurrent": 5,
+      "final_equity": 223118.07,
+      "profit_factor": 1.92,
+      "expectancy_r": 0.545,
+      "max_drawdown_pct": 1.95,
+      "daily_sharpe": 0.5457
+    },
+    {
+      "combo": "three_leg",
+      "intraday_exit": "fixed_3r",
+      "max_concurrent": 8,
+      "final_equity": 238695.16,
+      "profit_factor": 1.68,
+      "expectancy_r": 0.474,
+      "max_drawdown_pct": 3.13,
+      "daily_sharpe": 0.5407
+    },
+    {
+      "combo": "three_leg",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 5,
+      "final_equity": 234174.24,
+      "profit_factor": 1.83,
+      "expectancy_r": 0.631,
+      "max_drawdown_pct": 1.85,
+      "daily_sharpe": 0.5404
+    },
+    {
+      "combo": "three_leg",
+      "intraday_exit": "fixed_3r",
+      "max_concurrent": 5,
+      "final_equity": 204354.14,
+      "profit_factor": 1.69,
+      "expectancy_r": 0.46,
+      "max_drawdown_pct": 2.69,
+      "daily_sharpe": 0.4963
+    },
+    {
+      "combo": "premkt_intraday",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 3,
+      "final_equity": 189166.45,
+      "profit_factor": 2.02,
+      "expectancy_r": 0.682,
+      "max_drawdown_pct": 2.32,
+      "daily_sharpe": 0.4954
+    },
+    {
+      "combo": "premkt_intraday",
+      "intraday_exit": "fixed_3r",
+      "max_concurrent": 3,
+      "final_equity": 177009.29,
+      "profit_factor": 1.91,
+      "expectancy_r": 0.557,
+      "max_drawdown_pct": 2.73,
+      "daily_sharpe": 0.4662
+    },
+    {
+      "combo": "three_leg",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 3,
+      "final_equity": 169927.55,
+      "profit_factor": 1.75,
+      "expectancy_r": 0.577,
+      "max_drawdown_pct": 2.46,
+      "daily_sharpe": 0.4353
+    },
+    {
+      "combo": "three_leg",
+      "intraday_exit": "fixed_3r",
+      "max_concurrent": 3,
+      "final_equity": 162624.51,
+      "profit_factor": 1.69,
+      "expectancy_r": 0.469,
+      "max_drawdown_pct": 2.47,
+      "daily_sharpe": 0.4225
+    }
+  ],
+  "best": {
+    "combo": "intraday",
+    "intraday_exit": "fixed_3r",
+    "max_concurrent": 8,
+    "final_equity": 172884.28,
+    "profit_factor": 2.2,
+    "expectancy_r": 0.744,
+    "max_drawdown_pct": 1.6,
+    "daily_sharpe": 0.7457
+  },
+  "best_by_combo": {
+    "intraday": {
+      "combo": "intraday",
+      "intraday_exit": "fixed_3r",
+      "max_concurrent": 8,
+      "final_equity": 172884.28,
+      "profit_factor": 2.2,
+      "expectancy_r": 0.744,
+      "max_drawdown_pct": 1.6,
+      "daily_sharpe": 0.7457
+    },
+    "premkt_intraday": {
+      "combo": "premkt_intraday",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 8,
+      "final_equity": 307044.73,
+      "profit_factor": 2.21,
+      "expectancy_r": 0.79,
+      "max_drawdown_pct": 1.42,
+      "daily_sharpe": 0.6392
+    },
+    "three_leg": {
+      "combo": "three_leg",
+      "intraday_exit": "pct_trail_10",
+      "max_concurrent": 8,
+      "final_equity": 270998.55,
+      "profit_factor": 1.82,
+      "expectancy_r": 0.649,
+      "max_drawdown_pct": 1.85,
+      "daily_sharpe": 0.5833
+    }
+  },
+  "best_beats_intraday_only": true
+}

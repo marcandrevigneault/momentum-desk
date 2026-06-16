@@ -58,6 +58,11 @@ export async function getOptimize(): Promise<import("./types").OptimizeSnapshot>
   return r.json();
 }
 
+export async function getCombosOptimize(): Promise<{ source: string; best_by_combo?: Record<string, { intraday_exit: string; max_concurrent: number; daily_sharpe: number }>; best?: { combo: string }; best_beats_intraday_only?: boolean }> {
+  const r = await fetch("/api/combos-optimize");
+  return r.json();
+}
+
 export async function getRules(): Promise<import("./types").RulesSnapshot> {
   const r = await fetch("/api/rules");
   return r.json();
