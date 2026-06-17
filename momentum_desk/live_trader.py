@@ -118,8 +118,7 @@ class LiveEngine:
                  "shares": plan.shares, "entry_tod": sig.entry_tod,
                  "risk_dollars": plan.risk_dollars}
         self.open[symbol] = order
-        self._log("entry", **order)
-        return order
+        return self._log("entry", **order)   # tagged event (kind="entry")
 
     def _exit(self, symbol: str, sig: ExitSignal) -> dict | None:
         order = self.open.pop(symbol, None)
@@ -127,8 +126,7 @@ class LiveEngine:
             return None
         _close(order, sig)                   # adds exit/exit_tod/reason/r/pnl
         self.closed.append(order)
-        self._log("exit", **order)
-        return order
+        return self._log("exit", **order)    # tagged event (kind="exit")
 
     def _log(self, kind: str, symbol: str, **extra) -> dict:
         rec = {"kind": kind, "symbol": symbol, **extra}
