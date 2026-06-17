@@ -148,6 +148,13 @@ async def lifespan(app: FastAPI):
     print(f"[server] feed={app.state.service.adapter.name} mode={cfg.mode} "
           f"interval={cfg.scan_interval_s}s")
 
+    # Strategy Lab store (SQLite on the data volume), seeded with the canonical
+    # strategies so the leaderboard isn't empty on a fresh deploy.
+    from .edge.lab import seed as _seed_lab
+    from .edge.store import LabStore
+    app.state.lab = LabStore(os.environ.get("LAB_DB", "data/lab.db"))
+    _seed_lab(app.state.lab)
+
     # IBKR Client Portal keepalive — only when enabled (set IBKR_ENABLED=true in
     # the container, where the gateway + ibeam run). The tickle loop swallows its
     # own errors, so a not-yet-authenticated gateway just logs and retries.
@@ -171,6 +178,9 @@ async def lifespan(app: FastAPI):
     client = getattr(app.state, "ibkr_client", None)
     if client is not None:
         await client.aclose()
+    lab = getattr(app.state, "lab", None)
+    if lab is not None:
+        lab.close()
 
 
 app = FastAPI(title="Momentum Desk", lifespan=lifespan)
@@ -207,6 +217,81 @@ async def ibkr_status() -> dict:
     health = await cp.check(client, last_tickle_at=state.get("last_tickle_at"))
     paper = app.state.service.cfg.ibkr.paper
     return {"enabled": True, "account_id": client.account_id, "paper": paper, **health.as_dict()}
+
+
+# ---- Strategy Lab: one API over strategies, runs, the ranked leaderboard, and
+# the active pick (consolidates what the analyser/sim/combo/optimize pages did).
+
+@app.get("/api/lab/strategies")
+async def lab_strategies() -> dict:
+    return {"strategies": [s.to_dict() for s in app.state.lab.list_strategies()],
+            "active": app.state.lab.get_active()}
+
+
+@app.post("/api/lab/strategies")
+async def lab_save_strategy(payload: dict) -> dict:
+    from .edge.strategy import Strategy
+    strat = Strategy.from_dict(payload)
+    if not strat.name:
+        return {"ok": False, "error": "strategy needs a name"}
+    app.state.lab.save_strategy(strat)
+    return {"ok": True, "strategy": strat.to_dict()}
+
+
+@app.delete("/api/lab/strategies/{name}")
+async def lab_delete_strategy(name: str) -> dict:
+    app.state.lab.delete_strategy(name)
+    return {"ok": True}
+
+
+@app.get("/api/lab/leaderboard")
+async def lab_leaderboard(rank_by: str = "expectancy_r", limit: int = 100) -> dict:
+    return {"rank_by": rank_by, "runs": app.state.lab.leaderboard(rank_by=rank_by, limit=limit)}
+
+
+@app.get("/api/lab/runs/{run_id}")
+async def lab_run(run_id: int) -> dict:
+    run = app.state.lab.get_run(run_id)
+    return run or {"error": "no such run"}
+
+
+@app.post("/api/lab/run")
+async def lab_run_strategy(payload: dict) -> dict:
+    """Run a strategy (by name from the store, or an inline config) on synthetic
+    data over the window, persist it, and return the result. Heavy work runs off
+    the event loop."""
+    from .edge.lab import run_only
+    from .edge.strategy import Strategy
+    name = payload.get("name")
+    window = payload.get("window", "1y")
+    strat = app.state.lab.get_strategy(name) if name else None
+    if strat is None and isinstance(payload.get("strategy"), dict):
+        strat = Strategy.from_dict(payload["strategy"])
+    if strat is None:
+        return {"ok": False, "error": "provide a known strategy name or an inline strategy config"}
+    # compute off the event loop; write to the DB on this (the connection's) thread
+    result = await asyncio.to_thread(run_only, strat, window=window)
+    run_id = app.state.lab.save_run(strat, window, "synthetic", result)
+    return {"ok": True, "run_id": run_id, "window": window, **asdict_result(result)}
+
+
+@app.get("/api/lab/active")
+async def lab_get_active() -> dict:
+    return {"active": app.state.lab.get_active()}
+
+
+@app.post("/api/lab/active")
+async def lab_set_active(payload: dict) -> dict:
+    name = payload.get("name")
+    if not name:
+        return {"ok": False, "error": "name required"}
+    app.state.lab.set_active(name)
+    return {"ok": True, "active": name}
+
+
+def asdict_result(result) -> dict:
+    from dataclasses import asdict as _asdict
+    return {"result": _asdict(result)}
 
 
 @app.get("/api/config")
