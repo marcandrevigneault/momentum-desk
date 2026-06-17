@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   getLabRun, getLabStrategies, getLeaderboard, LabStrategy, LeaderRow,
-  runLabStrategy, setLabActive,
+  renameLabStrategy, runLabStrategy, setLabActive,
 } from "../api";
 import BacktesterPage from "./BacktesterPage";
 import EdgePage from "./EdgePage";
@@ -27,7 +27,9 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 const money = (v: number) => (v ?? 0).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const money2 = (v: number) => (v ?? 0).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0, signDisplay: "always" });
 const rColor = (v: number) => (v >= 0 ? "var(--green)" : "var(--red)");
+const tod = (mins: number) => `${String(Math.floor((mins ?? 0) / 60)).padStart(2, "0")}:${String((mins ?? 0) % 60).padStart(2, "0")}`;
 
 const RANKS: { k: string; label: string }[] = [
   { k: "expectancy_r", label: "Expectancy R" },
@@ -57,6 +59,14 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
       <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--muted)" }}>{label}</div>
       <div className="mono text-[15px] font-semibold" style={{ color: color ?? "var(--text)" }}>{value}</div>
     </div>
+  );
+}
+
+function Chip({ k, v }: { k: string; v: string }) {
+  return (
+    <span className="mono px-2 py-1 rounded" style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}>
+      <span style={{ color: "var(--muted)" }}>{k}</span> {v}
+    </span>
   );
 }
 
@@ -90,6 +100,16 @@ function LeaderboardTab() {
 
   const sel = selected?.result;
   const m = sel?.metrics ?? {};
+  const strat = strategies.find((s) => s.name === selected?.strategy) ?? null;
+  const [rename, setRename] = useState("");
+
+  const doRename = async () => {
+    const next = rename.trim();
+    if (!next || !strat || next === strat.name) { setRename(""); return; }
+    const res = await renameLabStrategy(strat.name, next);
+    if (res.ok) { await reloadStrats(); await reloadBoard(); setSelected({ ...selected, strategy: next }); }
+    setRename("");
+  };
 
   return (
     <div className="h-full overflow-auto p-4 flex flex-col gap-4">
@@ -177,13 +197,33 @@ function LeaderboardTab() {
         </table>
       </div>
 
-      {/* selected run result */}
+      {/* selected run — internals, metrics, monthly, trade log */}
       {sel && (
         <div className="rounded-lg p-3 flex flex-col gap-3" style={{ background: "var(--panel)", border: "1px solid var(--line)" }}>
-          <div className="text-[12px] font-semibold">
-            {selected.strategy} · {selected.window}
-            <span className="mono text-[11px] ml-2" style={{ color: "var(--muted)" }}>{selected.data_source}</span>
+          {/* name + rename */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <input value={rename || selected.strategy} onChange={(e) => setRename(e.target.value)}
+              onBlur={doRename} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+              className="text-[14px] font-bold px-2 py-1 rounded"
+              style={{ background: "var(--panel-2)", border: "1px solid var(--line)", color: "var(--text)" }}
+              title="rename this strategy" />
+            <span className="mono text-[11px]" style={{ color: "var(--muted)" }}>{selected.window} · {selected.data_source}</span>
           </div>
+
+          {/* internals — what this strategy actually IS */}
+          {strat && (
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <Chip k="kind" v={strat.kind} />
+              {strat.kind === "combo"
+                ? strat.legs.map((l, i) => <Chip key={i} k={`leg ${i + 1}`} v={`${l.session}·${l.style}`} />)
+                : <Chip k="session" v={strat.session} />}
+              <Chip k="exit" v={strat.exit_policy} />
+              <Chip k="sizing" v={`${strat.sizing.mode} ${strat.sizing.risk_pct}%`} />
+              <Chip k="max conc." v={String(strat.max_concurrent)} />
+            </div>
+          )}
+
+          {/* headline metrics */}
           <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))" }}>
             <Stat label="Final equity" value={money(sel.final_equity)} />
             <Stat label="Return" value={`${(m.return_pct ?? 0).toFixed(0)}%`} color={rColor(m.return_pct ?? 0)} />
@@ -194,6 +234,57 @@ function LeaderboardTab() {
             <Stat label="Trades" value={String(m.trades ?? 0)} />
           </div>
           <Spark curve={sel.equity_curve ?? []} />
+
+          {/* month-to-month + trade log, side by side on wide screens */}
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+            <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--line)" }}>
+              <div className="px-3 py-1.5 text-[11px] font-semibold" style={{ background: "var(--panel-2)" }}>Month-to-month</div>
+              <table className="w-full text-[11px]">
+                <thead><tr style={{ color: "var(--muted)" }} className="text-left">
+                  <th className="px-2 py-1 font-medium">Month</th><th className="px-2 py-1 font-medium mono">tr</th>
+                  <th className="px-2 py-1 font-medium mono">win%</th><th className="px-2 py-1 font-medium mono">P&amp;L</th>
+                  <th className="px-2 py-1 font-medium mono">cum</th></tr></thead>
+                <tbody>
+                  {(sel.monthly ?? []).map((r: any) => (
+                    <tr key={r.period} style={{ borderTop: "1px solid var(--line)" }}>
+                      <td className="px-2 py-1 mono">{r.period}</td>
+                      <td className="px-2 py-1 mono">{r.trades}</td>
+                      <td className="px-2 py-1 mono">{r.win_rate}</td>
+                      <td className="px-2 py-1 mono" style={{ color: rColor(r.pnl) }}>{money2(r.pnl)}</td>
+                      <td className="px-2 py-1 mono" style={{ color: rColor(r.cum_pnl) }}>{money(r.cum_pnl)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: "1px solid var(--line)", maxHeight: 340 }}>
+              <div className="px-3 py-1.5 text-[11px] font-semibold shrink-0" style={{ background: "var(--panel-2)" }}>
+                Trade log <span style={{ color: "var(--muted)" }}>({(sel.trades ?? []).length})</span>
+              </div>
+              <div className="overflow-auto">
+                <table className="w-full text-[11px]">
+                  <thead><tr style={{ color: "var(--muted)" }} className="text-left sticky top-0" >
+                    <th className="px-2 py-1 font-medium">Day</th><th className="px-2 py-1 font-medium">Sym</th>
+                    <th className="px-2 py-1 font-medium mono">in→out</th><th className="px-2 py-1 font-medium mono">sh</th>
+                    <th className="px-2 py-1 font-medium mono">R</th><th className="px-2 py-1 font-medium mono">P&amp;L</th>
+                    <th className="px-2 py-1 font-medium">exit</th></tr></thead>
+                  <tbody>
+                    {(sel.trades ?? []).slice().reverse().map((t: any, i: number) => (
+                      <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
+                        <td className="px-2 py-1 mono">{t.day}</td>
+                        <td className="px-2 py-1">{t.symbol}</td>
+                        <td className="px-2 py-1 mono">{tod(t.entry_tod)}→{tod(t.exit_tod)}</td>
+                        <td className="px-2 py-1 mono">{t.shares}</td>
+                        <td className="px-2 py-1 mono" style={{ color: rColor(t.r_multiple) }}>{(t.r_multiple ?? 0).toFixed(2)}</td>
+                        <td className="px-2 py-1 mono" style={{ color: rColor(t.pnl) }}>{money2(t.pnl)}</td>
+                        <td className="px-2 py-1" style={{ color: "var(--muted)" }}>{t.exit_reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

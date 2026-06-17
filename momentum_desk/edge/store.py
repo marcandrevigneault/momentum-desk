@@ -94,6 +94,25 @@ class LabStore:
         self._conn.execute("DELETE FROM strategies WHERE name=?", (name,))
         self._conn.commit()
 
+    def rename_strategy(self, old: str, new: str) -> bool:
+        """Rename a strategy and re-point its history (runs + active). Returns
+        False if `old` is missing or `new` already exists."""
+        if old == new:
+            return True
+        cur = self._conn.execute("SELECT config FROM strategies WHERE name=?", (old,)).fetchone()
+        if cur is None or self._conn.execute("SELECT 1 FROM strategies WHERE name=?", (new,)).fetchone():
+            return False
+        # the config carries its own name; rewrite it too
+        cfg = json.loads(cur["config"])
+        cfg["name"] = new
+        self._conn.execute("UPDATE strategies SET name=?, config=? WHERE name=?",
+                           (new, json.dumps(cfg), old))
+        self._conn.execute("UPDATE runs SET strategy=? WHERE strategy=?", (new, old))
+        if self.get_active() == old:
+            self.set_active(new)
+        self._conn.commit()
+        return True
+
     # ---- runs -------------------------------------------------------------
 
     def save_run(self, strategy: Strategy, window: str, data_source: str, result: AccountRun) -> int:

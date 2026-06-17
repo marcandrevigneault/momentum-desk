@@ -244,6 +244,15 @@ async def lab_delete_strategy(name: str) -> dict:
     return {"ok": True}
 
 
+@app.post("/api/lab/strategies/{name}/rename")
+async def lab_rename_strategy(name: str, payload: dict) -> dict:
+    new = (payload.get("new_name") or "").strip()
+    if not new:
+        return {"ok": False, "error": "new_name required"}
+    ok = app.state.lab.rename_strategy(name, new)
+    return {"ok": ok, "error": None if ok else "name missing or already taken", "name": new}
+
+
 @app.get("/api/lab/leaderboard")
 async def lab_leaderboard(rank_by: str = "expectancy_r", limit: int = 100) -> dict:
     return {"rank_by": rank_by, "runs": app.state.lab.leaderboard(rank_by=rank_by, limit=limit)}
