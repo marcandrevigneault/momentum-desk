@@ -24,8 +24,8 @@ from dataclasses import dataclass, field
 
 from ..backtest.data import HistoricalProvider, MinuteBar
 from .exits import ExitPolicy, simulate_exit
-from .gauntlet import _expected_max_sharpe, _psr, _sharpe, _skew_kurt, _std
-from .screen import ScreenConfig, _find_event, _passes_gate
+from .screen import ScreenConfig, iter_entry_events
+from .stats import _expected_max_sharpe, _psr, _sharpe, _skew_kurt, _std
 
 
 @dataclass
@@ -81,26 +81,15 @@ class OptimizeResult:
 def build_eval_events(provider: HistoricalProvider, cfg: ScreenConfig,
                       slippage_pct: float) -> list[EvalEvent]:
     events: list[EvalEvent] = []
-    for day in provider.trading_days():
-        for cand in provider.candidates(day):
-            if not _passes_gate(cand, cfg):
-                continue
-            bars = provider.minutes(cand.symbol, day)
-            if not bars:
-                continue
-            ev = _find_event(bars, cfg)
-            if ev is None:
-                continue
-            entry_idx, entry, stop, fwd = ev
-            if entry - stop <= 0 or not fwd:
-                continue
-            eb = bars[entry_idx]
-            ext = 100.0 * (entry - eb.vwap) / eb.vwap if eb.vwap > 0 else 0.0
-            rvol = eb.cum_volume / cand.avg_volume_20d if cand.avg_volume_20d > 0 else 0.0
-            move = 100.0 * (entry - cand.day_open) / cand.day_open if cand.day_open > 0 else 0.0
-            events.append(EvalEvent(day=day, entry=entry, init_stop=stop, ext_vwap_pct=ext,
-                                    rvol=rvol, move_from_open_pct=move,
-                                    prior=bars[: entry_idx + 1], fwd=fwd))
+    for ev in iter_entry_events(provider, cfg):
+        if ev.entry - ev.stop <= 0 or not ev.fwd:
+            continue
+        eb = ev.entry_bar
+        ext = 100.0 * (ev.entry - eb.vwap) / eb.vwap if eb.vwap > 0 else 0.0
+        rvol = eb.cum_volume / ev.cand.avg_volume_20d if ev.cand.avg_volume_20d > 0 else 0.0
+        move = 100.0 * (ev.entry - ev.cand.day_open) / ev.cand.day_open if ev.cand.day_open > 0 else 0.0
+        events.append(EvalEvent(day=ev.day, entry=ev.entry, init_stop=ev.stop, ext_vwap_pct=ext,
+                                rvol=rvol, move_from_open_pct=move, prior=ev.prior, fwd=ev.fwd))
     return events
 
 

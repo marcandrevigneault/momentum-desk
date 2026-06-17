@@ -11,9 +11,9 @@ mean — milliseconds — which is what makes the live variable editor interacti
 from __future__ import annotations
 
 from .exits import POLICIES, simulate_exit
-from .gauntlet import _sharpe
 from .optimize import build_eval_events
 from .screen import ScreenConfig
+from .stats import _sharpe
 
 # the exit policies offered in the tuner (name → R precomputed per event)
 CACHE_POLICIES = [p.name for p in POLICIES]

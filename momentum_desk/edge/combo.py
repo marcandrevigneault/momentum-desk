@@ -15,11 +15,12 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 from ..backtest.data import MARKET_OPEN_TOD, HistoricalProvider, MinuteBar, Trade
-from ..backtest.engine import Backtester
+from ..backtest.metrics import compute_metrics
 from ..models import Snapshot
 from ..risk import RiskConfig, RiskEngine
 from .exits import simulate_exit_detail, simulate_fade_detail
 from .portfolio import SimTrade, _book_due, _monthly, _policy
+from .result import AccountRun
 from .screen import ScreenConfig, _find_event, _passes_gate
 
 
@@ -80,21 +81,12 @@ class ComboConfig:
 
 
 @dataclass
-class ComboResult:
-    legs: list[str]
-    days: int
-    starting_equity: float
-    final_equity: float
-    n_signals: int
-    n_taken: int
-    n_skipped_capacity: int
-    metrics: dict = field(default_factory=dict)
+class ComboResult(AccountRun):
+    # account-level fields come from AccountRun; a combo adds which legs ran and
+    # their per-leg attribution.
+    legs: list[str] = field(default_factory=list)
     leg_pnl: dict = field(default_factory=dict)      # per-leg attribution ($)
     leg_trades: dict = field(default_factory=dict)   # per-leg trade count
-    equity_curve: list[float] = field(default_factory=list)
-    daily_equity: list[dict] = field(default_factory=list)
-    monthly: list[dict] = field(default_factory=list)
-    trades: list[dict] = field(default_factory=list)
 
 
 def _leg_day_pots(leg: ComboLeg, day: str) -> list[tuple]:
@@ -202,7 +194,7 @@ def run_combo(legs: list[ComboLeg], ccfg: ComboConfig | None = None,
     bt_trades = [Trade(symbol=t.symbol, day=t.day, entry_t=t.entry_tod, entry=t.entry, stop=0.0,
                        target=0.0, shares=t.shares, exit_t=t.exit_tod, exit=t.exit, pnl=t.pnl,
                        r_multiple=t.r_multiple, exit_reason=t.exit_reason) for t in trades]
-    metrics = asdict(Backtester._metrics(bt_trades, curve, risk_cfg.account_equity))
+    metrics = asdict(compute_metrics(bt_trades, curve, risk_cfg.account_equity))
 
     return ComboResult(
         legs=[leg.name for leg in legs], days=len(all_days),

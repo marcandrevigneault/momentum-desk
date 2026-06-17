@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from ..models import Snapshot
 from ..risk import RiskConfig, RiskEngine
 from ..scanner import ScanConfig
-from .data import MARKET_OPEN_TOD, BacktestResult, DayCandidate, HistoricalProvider, Metrics, Trade
+from .data import MARKET_OPEN_TOD, BacktestResult, DayCandidate, HistoricalProvider, Trade
+from .metrics import compute_metrics
 
 
 @dataclass
@@ -100,7 +101,7 @@ class Backtester:
                 curve.append(equity)
                 trades.append(trade)
 
-        metrics = self._metrics(trades, curve, self.risk_cfg.account_equity)
+        metrics = compute_metrics(trades, curve, self.risk_cfg.account_equity)
         return BacktestResult(
             metrics=metrics, trades=trades, equity_curve=curve,
             starting_equity=self.risk_cfg.account_equity, days=len(days),
@@ -351,32 +352,3 @@ class Backtester:
             exit=round(exit_px, 4), pnl=round(pnl, 2), r_multiple=round(r, 2), exit_reason=reason,
         )
 
-    # ---------- metrics ----------
-    @staticmethod
-    def _metrics(trades: list[Trade], curve: list[float], start: float) -> Metrics:
-        m = Metrics()
-        m.trades = len(trades)
-        if not trades:
-            return m
-        wins = [t.pnl for t in trades if t.pnl > 0]
-        losses = [t.pnl for t in trades if t.pnl <= 0]
-        m.wins, m.losses = len(wins), len(losses)
-        m.win_rate = round(100.0 * m.wins / m.trades, 1)
-        m.gross_profit = round(sum(wins), 2)
-        m.gross_loss = round(-sum(losses), 2)
-        m.profit_factor = round(m.gross_profit / m.gross_loss, 2) if m.gross_loss > 0 else float("inf")
-        m.avg_win = round(m.gross_profit / m.wins, 2) if m.wins else 0.0
-        m.avg_loss = round(-m.gross_loss / m.losses, 2) if m.losses else 0.0
-        m.total_pnl = round(sum(t.pnl for t in trades), 2)
-        m.expectancy = round(m.total_pnl / m.trades, 2)
-        m.expectancy_r = round(sum(t.r_multiple for t in trades) / m.trades, 3)
-        m.return_pct = round(100.0 * m.total_pnl / start, 2) if start > 0 else 0.0
-
-        peak = curve[0]
-        max_dd = 0.0
-        for eq in curve:
-            peak = max(peak, eq)
-            max_dd = max(max_dd, peak - eq)
-        m.max_drawdown = round(max_dd, 2)
-        m.max_drawdown_pct = round(100.0 * max_dd / peak, 2) if peak > 0 else 0.0
-        return m

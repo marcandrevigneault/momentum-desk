@@ -15,9 +15,9 @@ from dataclasses import dataclass, field
 
 from ..backtest.data import HistoricalProvider
 from .exits import POLICIES, ExitPolicy, simulate_exit
-from .gauntlet import _sharpe
 from .optimize import EvalEvent, build_eval_events
 from .screen import ScreenConfig
+from .stats import _sharpe
 
 _OPS = {
     "<": lambda a, b: a < b,
