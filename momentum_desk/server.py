@@ -286,6 +286,21 @@ async def lab_run_strategy(payload: dict) -> dict:
     return {"ok": True, "run_id": run_id, "window": window, "data_source": ds, **asdict_result(result)}
 
 
+@app.get("/api/lab/gauntlet")
+async def lab_gauntlet(strategy: str) -> dict:
+    """The cached evaluation gauntlet (bootstrap CI, deflated Sharpe, walk-forward)
+    for a strategy's entry — 'does this survive?'. None for multi-leg combos."""
+    from .edge.lab import gauntlet_key
+    strat = app.state.lab.get_strategy(strategy)
+    if strat is None:
+        return {"available": False, "reason": "unknown strategy"}
+    key = gauntlet_key(strat)
+    if key is None:
+        return {"available": False, "reason": "gauntlet evaluates a single entry — not multi-leg combos"}
+    g = app.state.lab.get_gauntlet(key)
+    return {"available": bool(g), "gauntlet": g} if g else {"available": False, "reason": "not computed yet"}
+
+
 @app.get("/api/lab/active")
 async def lab_get_active() -> dict:
     return {"active": app.state.lab.get_active()}

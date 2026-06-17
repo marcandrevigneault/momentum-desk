@@ -65,6 +65,7 @@ class LabStore:
                 result       TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE IF NOT EXISTS gauntlets (key TEXT PRIMARY KEY, data TEXT NOT NULL);
             """
         )
         self._conn.commit()
@@ -172,3 +173,17 @@ class LabStore:
     def get_active(self) -> str | None:
         row = self._conn.execute("SELECT value FROM meta WHERE key='active'").fetchone()
         return row["value"] if row else None
+
+    # ---- gauntlets (per entry, keyed "session|exit") ----------------------
+
+    def save_gauntlet(self, key: str, data: dict) -> None:
+        self._conn.execute(
+            "INSERT INTO gauntlets(key, data) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET data=excluded.data",
+            (key, json.dumps(data)),
+        )
+        self._conn.commit()
+
+    def get_gauntlet(self, key: str) -> dict | None:
+        row = self._conn.execute("SELECT data FROM gauntlets WHERE key=?", (key,)).fetchone()
+        return json.loads(row["data"]) if row else None

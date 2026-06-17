@@ -31,6 +31,15 @@ CANONICAL: list[Strategy] = [
 
 _DAYS = {"1y": 252, "5y": 1260}
 SEED_PATH = Path(__file__).parent / "lab_seed.json"
+GAUNTLET_PATH = Path(__file__).parent / "lab_gauntlets.json"
+
+
+def gauntlet_key(strategy: Strategy) -> str | None:
+    """The gauntlet cache key for a strategy, or None if it doesn't get one (the
+    gauntlet evaluates a single entry/exit stream, so multi-leg combos are out)."""
+    if strategy.kind != "single":
+        return None
+    return f"{strategy.session}|{strategy.exit_policy}"
 
 
 def _data_key() -> str | None:
@@ -81,3 +90,11 @@ def seed(store: LabStore) -> None:
         for run in data.get("runs", []):
             store.add_run_raw(run["strategy"], run.get("kind", "single"), run["window"],
                               run.get("data_source", "polygon"), run["result"])
+    if GAUNTLET_PATH.exists() and not store.get_gauntlet("__seeded__"):
+        try:
+            gdata = json.loads(GAUNTLET_PATH.read_text()).get("gauntlets", {})
+        except Exception:  # noqa: BLE001
+            gdata = {}
+        for key, g in gdata.items():
+            store.save_gauntlet(key, g)
+        store.save_gauntlet("__seeded__", {"ok": True})   # sentinel so we don't reload
