@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 from ..backtest.data import MARKET_OPEN_TOD, HistoricalProvider, MinuteBar, Trade
-from ..backtest.engine import Backtester
+from ..backtest.metrics import compute_metrics
 from ..models import Snapshot
 from ..risk import RiskConfig, RiskEngine
 from .exits import simulate_exit_detail, simulate_fade_detail
@@ -202,7 +202,7 @@ def run_combo(legs: list[ComboLeg], ccfg: ComboConfig | None = None,
     bt_trades = [Trade(symbol=t.symbol, day=t.day, entry_t=t.entry_tod, entry=t.entry, stop=0.0,
                        target=0.0, shares=t.shares, exit_t=t.exit_tod, exit=t.exit, pnl=t.pnl,
                        r_multiple=t.r_multiple, exit_reason=t.exit_reason) for t in trades]
-    metrics = asdict(Backtester._metrics(bt_trades, curve, risk_cfg.account_equity))
+    metrics = asdict(compute_metrics(bt_trades, curve, risk_cfg.account_equity))
 
     return ComboResult(
         legs=[leg.name for leg in legs], days=len(all_days),
