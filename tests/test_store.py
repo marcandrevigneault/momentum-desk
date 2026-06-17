@@ -60,6 +60,21 @@ def test_leaderboard_ranks_by_metric(store):
     assert store.leaderboard(rank_by="oops; DROP TABLE runs")[0]["strategy"] == "b"
 
 
+def test_rename_repoints_history_and_active(store):
+    store.save_strategy(Strategy(name="old"))
+    store.set_active("old")
+    store.save_run(Strategy(name="old"), "1y", "synthetic", _run(40_000, 1.0))
+    assert store.rename_strategy("old", "new") is True
+    assert store.get_strategy("old") is None
+    assert store.get_strategy("new").name == "new"          # config name rewritten too
+    assert store.get_active() == "new"                       # active re-pointed
+    assert store.leaderboard()[0]["strategy"] == "new"       # run history re-pointed
+    # refuses to clobber an existing name, and missing source
+    store.save_strategy(Strategy(name="other"))
+    assert store.rename_strategy("new", "other") is False
+    assert store.rename_strategy("ghost", "x") is False
+
+
 def test_active_selection(store):
     assert store.get_active() is None
     store.set_active("intraday")

@@ -191,3 +191,10 @@ export async function setLabActive(name: string): Promise<{ ok: boolean; active:
   });
   return r.json();
 }
+export async function renameLabStrategy(name: string, newName: string): Promise<{ ok: boolean; error?: string }> {
+  const r = await fetch(`/api/lab/strategies/${encodeURIComponent(name)}/rename`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ new_name: newName }),
+  });
+  return r.json();
+}
