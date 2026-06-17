@@ -15,9 +15,15 @@ from .scanner import ScanConfig
 
 @dataclass
 class IBKRConfig:
+    # Legacy socket adapter (TWS / IB Gateway desktop) — see broker/ibkr.py.
     host: str = "127.0.0.1"
     port: int = 7497          # TWS paper
     client_id: int = 17
+    # Client Portal Gateway (bravos-style REST + phone-push 2FA) — broker/ibkr_cp.py.
+    # The gateway runs locally (auto-started by ibeam); login is one phone tap.
+    gateway_url: str = "https://localhost:5000/v1/api"
+    account_id: str = ""      # blank = use the first account the gateway reports
+    paper: bool = True        # paper-first; IBKR_PAPER=false to target the live account
 
 
 @dataclass
@@ -59,6 +65,15 @@ def load_config(path: str = "config.yaml") -> AppConfig:
     )
     if isinstance(raw.get("ibkr"), dict):
         cfg.ibkr = _coerce(IBKRConfig, raw["ibkr"])
+    # IBKR Client Portal env overrides (Fly secrets) win over config.yaml. The
+    # USERNAME/PASSWORD secrets are consumed by ibeam (the gateway auto-login),
+    # not read here — we never handle the IBKR password in app code.
+    if os.environ.get("IBKR_GATEWAY_URL"):
+        cfg.ibkr.gateway_url = os.environ["IBKR_GATEWAY_URL"]
+    if os.environ.get("IBKR_ACCOUNT_ID"):
+        cfg.ibkr.account_id = os.environ["IBKR_ACCOUNT_ID"]
+    if os.environ.get("IBKR_PAPER"):
+        cfg.ibkr.paper = os.environ["IBKR_PAPER"].strip().lower() not in ("false", "0", "no")
     if isinstance(raw.get("scanner"), dict):
         cfg.scanner = _coerce(ScanConfig, raw["scanner"])
     if isinstance(raw.get("risk"), dict):

@@ -11,11 +11,14 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "pyyaml",
+    "httpx",        # IBKR Client Portal REST client + the WAF re-proxy (also backs TestClient)
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "httpx"]   # httpx backs fastapi's TestClient
-broker = ["ib-async"]          # IBKR connectivity (paper-first)
+dev = ["pytest", "ruff"]
+broker = ["ib-async"]          # legacy socket adapter (TWS/Gateway); the CP flow needs no extra
+# IBKR Client Portal Gateway + ibeam auto-login run as separate processes in the
+# container (see Dockerfile / deploy/supervisord.conf), not as Python deps here.
 
 [tool.setuptools.packages.find]
 include = ["momentum_desk*"]

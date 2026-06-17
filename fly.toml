@@ -1,31 +1,42 @@
 # Fly.io deploy config for the Momentum Desk dashboard.
-# Serves the API + built dashboard from one container (see Dockerfile).
-# Defaults keep it mock + paper; password protection comes from the
-# DASHBOARD_USER / DASHBOARD_PASSWORD secrets (set via `fly secrets set`).
+# One container runs supervisord -> ib_proxy + ibeam (IBKR CP gateway auto-login)
+# + the FastAPI dashboard (see Dockerfile / deploy/supervisord.conf).
+# Password protection comes from the DASHBOARD_USER / DASHBOARD_PASSWORD secrets.
+# IBKR login secrets (IBKR_USERNAME / IBKR_PASSWORD) are set via `fly secrets set`
+# and consumed by ibeam — never committed here.
 
 app = "momentum-desk-mav"
 primary_region = "yyz"
+
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
 
 [build]
   dockerfile = "Dockerfile"
 
 [env]
-  # explicit, even though these are the code defaults — no real feed, no live trading
   PYTHONUNBUFFERED = "1"
+  # IBKR Client Portal flow. USERNAME/PASSWORD come from secrets; these are safe.
+  IBKR_ENABLED = "true"                          # run the gateway + keepalive
+  IBKR_GATEWAY_URL = "https://localhost:5000/v1/api"
+  IBKR_PAPER = "true"                            # paper-first; flip to false for live
 
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = "stop"
+  # The IBKR session lives in the gateway process and dies if the machine stops,
+  # so we stay always-on (no scale-to-zero) — otherwise every cold start needs a
+  # fresh phone 2FA. The gateway (:5000) is NOT exposed; only the dashboard is.
+  auto_stop_machines = "off"
   auto_start_machines = true
-  min_machines_running = 0          # scale to zero when idle (it's a personal mock board)
+  min_machines_running = 1
 
   [[http_service.checks]]
     method = "GET"
     path = "/api/health"            # exempt from auth, returns {"ok": true}
     interval = "30s"
     timeout = "5s"
-    grace_period = "10s"
+    grace_period = "60s"            # gateway + ibeam need time to come up
 
 # persist the historical-data cache + job results across restarts
 [mounts]
@@ -33,5 +44,6 @@ primary_region = "yyz"
   destination = "/app/data"
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  # ibeam's headless Chromium + the gateway JVM each take ~200-400 MB; 512 MB OOMs.
+  size = "shared-cpu-2x"
+  memory = "2gb"
