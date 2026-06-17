@@ -208,6 +208,16 @@ export async function getLiveIntent(): Promise<LiveIntent> {
   const r = await fetch("/api/live/intent");
   return r.json();
 }
+export interface IbkrPortfolio {
+  enabled: boolean; ok?: boolean; reason?: string;
+  account_id?: string; paper?: boolean; nav?: number; cash?: number;
+  unrealized_pnl?: number; realized_pnl?: number | null;
+  positions?: { symbol: string; quantity: number; avg_price: number }[];
+}
+export async function getIbkrPortfolio(): Promise<IbkrPortfolio> {
+  const r = await fetch("/api/ibkr/portfolio");
+  return r.json();
+}
 export async function renameLabStrategy(name: string, newName: string): Promise<{ ok: boolean; error?: string }> {
   const r = await fetch(`/api/lab/strategies/${encodeURIComponent(name)}/rename`, {
     method: "POST", headers: { "Content-Type": "application/json" },
