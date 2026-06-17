@@ -1,4 +1,5 @@
 import { useState } from "react";
+import LabPage from "./pages/LabPage";
 import BacktesterPage from "./pages/BacktesterPage";
 import CockpitPage from "./pages/CockpitPage";
 import EdgePage from "./pages/EdgePage";
@@ -10,9 +11,10 @@ import AnalyserPage from "./pages/AnalyserPage";
 import RulesPage from "./pages/RulesPage";
 import TunerPage from "./pages/TunerPage";
 
-type Page = "analyser" | "cockpit" | "backtester" | "edge" | "exits" | "gauntlet" | "simulation" | "combo" | "rules" | "tuner";
+type Page = "lab" | "analyser" | "cockpit" | "backtester" | "edge" | "exits" | "gauntlet" | "simulation" | "combo" | "rules" | "tuner";
 
 const NAV: { id: Page; label: string; icon: string; hint: string }[] = [
+  { id: "lab", label: "Strategy Lab", icon: "🧪", hint: "define · run · rank · activate — all strategies in one place" },
   { id: "analyser", label: "Analyser", icon: "🧭", hint: "compare all strategies · pick the active one" },
   { id: "cockpit", label: "Cockpit", icon: "▦", hint: "live scanner, charts, paper trading" },
   { id: "backtester", label: "Backtester", icon: "📈", hint: "run + visualize a strategy backtest" },
@@ -26,7 +28,7 @@ const NAV: { id: Page; label: string; icon: string; hint: string }[] = [
 ];
 
 export default function App() {
-  const [page, setPage] = useState<Page>("analyser");
+  const [page, setPage] = useState<Page>("lab");
   const [menu, setMenu] = useState(false);
   const active = NAV.find((n) => n.id === page)!;
 
@@ -85,7 +87,7 @@ export default function App() {
 
       {/* active page */}
       <div className="grow min-h-0">
-        {page === "analyser" ? <AnalyserPage /> : page === "cockpit" ? <CockpitPage /> : page === "backtester" ? <BacktesterPage /> : page === "edge" ? <EdgePage /> : page === "exits" ? <ExitLabPage /> : page === "gauntlet" ? <GauntletPage /> : page === "simulation" ? <SimulationPage /> : page === "combo" ? <ComboPage /> : page === "rules" ? <RulesPage /> : <TunerPage />}
+        {page === "lab" ? <LabPage /> : page === "analyser" ? <AnalyserPage /> : page === "cockpit" ? <CockpitPage /> : page === "backtester" ? <BacktesterPage /> : page === "edge" ? <EdgePage /> : page === "exits" ? <ExitLabPage /> : page === "gauntlet" ? <GauntletPage /> : page === "simulation" ? <SimulationPage /> : page === "combo" ? <ComboPage /> : page === "rules" ? <RulesPage /> : <TunerPage />}
       </div>
     </div>
   );
