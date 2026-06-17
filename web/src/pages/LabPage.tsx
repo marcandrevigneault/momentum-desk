@@ -77,6 +77,7 @@ function LeaderboardTab() {
   const [rankBy, setRankBy] = useState("expectancy_r");
   const [win, setWin] = useState("1y");
   const [selected, setSelected] = useState<any | null>(null);
+  const [monthFilter, setMonthFilter] = useState<string | null>(null);
 
   const reloadBoard = async (rb = rankBy, w = win) => setBoard(await getLeaderboard(rb, w));
   const reloadStrats = async () => {
@@ -86,7 +87,7 @@ function LeaderboardTab() {
   useEffect(() => { reloadStrats(); }, []);
   useEffect(() => { reloadBoard(rankBy, win); }, [rankBy, win]);
 
-  const pickRow = async (r: LeaderRow) => setSelected(await getLabRun(r.id));
+  const pickRow = async (r: LeaderRow) => { setMonthFilter(null); setSelected(await getLabRun(r.id)); };
   const makeActive = async (e: any, name: string) => { e.stopPropagation(); await setLabActive(name); setActive(name); };
 
   const sel = selected?.result;
@@ -217,7 +218,10 @@ function LeaderboardTab() {
                   <th className="px-2 py-1 font-medium mono">cum</th></tr></thead>
                 <tbody>
                   {(sel.monthly ?? []).map((r: any) => (
-                    <tr key={r.period} style={{ borderTop: "1px solid var(--line)" }}>
+                    <tr key={r.period} onClick={() => setMonthFilter(monthFilter === r.period ? null : r.period)}
+                      className="cursor-pointer"
+                      style={{ borderTop: "1px solid var(--line)", background: monthFilter === r.period ? "var(--panel-2)" : undefined }}
+                      title="click to filter the trade log to this month">
                       <td className="px-2 py-1 mono">{r.period}</td>
                       <td className="px-2 py-1 mono">{r.trades}</td>
                       <td className="px-2 py-1 mono">{r.win_rate}</td>
@@ -229,19 +233,33 @@ function LeaderboardTab() {
               </table>
             </div>
             <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: "1px solid var(--line)", maxHeight: 340 }}>
-              <div className="px-3 py-1.5 text-[11px] font-semibold shrink-0" style={{ background: "var(--panel-2)" }}>
-                Trade log <span style={{ color: "var(--muted)" }}>({(sel.trades ?? []).length})</span>
-              </div>
-              <div className="overflow-auto">
-                <table className="w-full text-[11px]">
-                  <thead><tr style={{ color: "var(--muted)" }} className="text-left sticky top-0" >
-                    <th className="px-2 py-1 font-medium">Day</th><th className="px-2 py-1 font-medium">Sym</th>
-                    <th className="px-2 py-1 font-medium mono">in→out</th><th className="px-2 py-1 font-medium mono">sh</th>
-                    <th className="px-2 py-1 font-medium mono">R</th><th className="px-2 py-1 font-medium mono">P&amp;L</th>
-                    <th className="px-2 py-1 font-medium">exit</th></tr></thead>
-                  <tbody>
-                    {(sel.trades ?? []).slice().reverse().map((t: any, i: number) => (
-                      <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
+              {(() => {
+                const all = (sel.trades ?? []) as any[];
+                const filtered = monthFilter ? all.filter((t) => (t.day ?? "").startsWith(monthFilter)) : all;
+                const shown = filtered.slice(-500).reverse();   // cap rendered rows; newest first
+                return (<>
+                  <div className="px-3 py-1.5 text-[11px] font-semibold shrink-0 flex items-center gap-2" style={{ background: "var(--panel-2)" }}>
+                    <span>Trade log</span>
+                    {monthFilter
+                      ? <span className="mono px-1.5 rounded" style={{ background: "var(--panel)", border: "1px solid var(--line)" }}>
+                          {monthFilter} · {filtered.length}
+                          <button onClick={() => setMonthFilter(null)} className="ml-1" style={{ color: "var(--muted)" }}>✕</button>
+                        </span>
+                      : <span style={{ color: "var(--muted)" }}>
+                          ({shown.length === all.length ? all.length : `recent ${shown.length} of ${all.length}`}) — click a month to filter
+                        </span>}
+                  </div>
+                  <div className="overflow-auto">
+                    <table className="w-full text-[11px]">
+                      <thead><tr style={{ color: "var(--muted)" }} className="text-left sticky top-0">
+                        <th className="px-2 py-1 font-medium">Day</th><th className="px-2 py-1 font-medium">Sym</th>
+                        <th className="px-2 py-1 font-medium mono">in→out</th><th className="px-2 py-1 font-medium mono">sh</th>
+                        <th className="px-2 py-1 font-medium mono">R</th><th className="px-2 py-1 font-medium mono">P&amp;L</th>
+                        <th className="px-2 py-1 font-medium">exit</th></tr></thead>
+                      <tbody>
+                        {shown.length === 0 && <tr><td colSpan={7} className="px-2 py-3 text-center" style={{ color: "var(--muted)" }}>no trades this month</td></tr>}
+                        {shown.map((t: any, i: number) => (
+                          <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
                         <td className="px-2 py-1 mono">{t.day}</td>
                         <td className="px-2 py-1">{t.symbol}</td>
                         <td className="px-2 py-1 mono">{tod(t.entry_tod)}→{tod(t.exit_tod)}</td>
@@ -251,9 +269,11 @@ function LeaderboardTab() {
                         <td className="px-2 py-1" style={{ color: "var(--muted)" }}>{t.exit_reason}</td>
                       </tr>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                      </tbody>
+                    </table>
+                  </div>
+                </>);
+              })()}
             </div>
           </div>
         </div>
