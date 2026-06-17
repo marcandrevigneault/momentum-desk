@@ -1,30 +1,16 @@
 import { useState } from "react";
 import LabPage from "./pages/LabPage";
-import BacktesterPage from "./pages/BacktesterPage";
 import CockpitPage from "./pages/CockpitPage";
-import EdgePage from "./pages/EdgePage";
-import ExitLabPage from "./pages/ExitLabPage";
-import GauntletPage from "./pages/GauntletPage";
-import SimulationPage from "./pages/SimulationPage";
-import ComboPage from "./pages/ComboPage";
-import AnalyserPage from "./pages/AnalyserPage";
-import RulesPage from "./pages/RulesPage";
-import TunerPage from "./pages/TunerPage";
 
-type Page = "lab" | "analyser" | "cockpit" | "backtester" | "edge" | "exits" | "gauntlet" | "simulation" | "combo" | "rules" | "tuner";
+// Two top-level surfaces. The Strategy Lab folds in the analysis tools
+// (Backtester/Edge/Exit-lab/Gauntlet/Rules/Tuner) as its own tabs and subsumes
+// the old Analyser/Simulation/Combo pages into its leaderboard + results. Cockpit
+// is the live execution surface and stays separate.
+type Page = "lab" | "cockpit";
 
 const NAV: { id: Page; label: string; icon: string; hint: string }[] = [
-  { id: "lab", label: "Strategy Lab", icon: "🧪", hint: "define · run · rank · activate — all strategies in one place" },
-  { id: "analyser", label: "Analyser", icon: "🧭", hint: "compare all strategies · pick the active one" },
+  { id: "lab", label: "Strategy Lab", icon: "🧪", hint: "define · run · rank · activate — every strategy + the analysis tools" },
   { id: "cockpit", label: "Cockpit", icon: "▦", hint: "live scanner, charts, paper trading" },
-  { id: "backtester", label: "Backtester", icon: "📈", hint: "run + visualize a strategy backtest" },
-  { id: "edge", label: "Edge", icon: "🔬", hint: "which variables carry edge" },
-  { id: "exits", label: "Exit lab", icon: "🚪", hint: "compare exit policies head-to-head" },
-  { id: "gauntlet", label: "Gauntlet", icon: "⚖️", hint: "does the edge survive honest scrutiny" },
-  { id: "simulation", label: "Simulation", icon: "💹", hint: "full-year account simulation" },
-  { id: "combo", label: "Combo", icon: "🧬", hint: "multi-style shared-capital book" },
-  { id: "rules", label: "Rules", icon: "🔀", hint: "AND/OR entry+exit rule combos" },
-  { id: "tuner", label: "Tuner", icon: "🎛️", hint: "change variables, re-score instantly" },
 ];
 
 export default function App() {
@@ -87,7 +73,7 @@ export default function App() {
 
       {/* active page */}
       <div className="grow min-h-0">
-        {page === "lab" ? <LabPage /> : page === "analyser" ? <AnalyserPage /> : page === "cockpit" ? <CockpitPage /> : page === "backtester" ? <BacktesterPage /> : page === "edge" ? <EdgePage /> : page === "exits" ? <ExitLabPage /> : page === "gauntlet" ? <GauntletPage /> : page === "simulation" ? <SimulationPage /> : page === "combo" ? <ComboPage /> : page === "rules" ? <RulesPage /> : <TunerPage />}
+        {page === "lab" ? <LabPage /> : <CockpitPage />}
       </div>
     </div>
   );

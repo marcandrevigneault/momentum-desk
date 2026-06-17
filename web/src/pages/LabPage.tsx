@@ -3,10 +3,28 @@ import {
   getLabRun, getLabStrategies, getLeaderboard, LabStrategy, LeaderRow,
   runLabStrategy, setLabActive,
 } from "../api";
+import BacktesterPage from "./BacktesterPage";
+import EdgePage from "./EdgePage";
+import ExitLabPage from "./ExitLabPage";
+import GauntletPage from "./GauntletPage";
+import RulesPage from "./RulesPage";
+import TunerPage from "./TunerPage";
 
-// The Strategy Lab — one surface for every strategy: define, run, rank, and
-// pick the active one. Consolidates the Analyser/Simulation/Combo/Optimize pages
-// onto the unified /api/lab backend (Strategy object + SQLite store).
+// The Strategy Lab — one surface for every strategy: define, run, rank, and pick
+// the active one (Leaderboard), with the analysis tools folded in as tabs.
+// Consolidates Analyser/Simulation/Combo (-> Leaderboard) and hosts the edge
+// pipeline + tuners as sub-views, all under one nav entry.
+
+type Tab = "leaderboard" | "backtester" | "edge" | "exits" | "gauntlet" | "rules" | "tuner";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "leaderboard", label: "Leaderboard" },
+  { id: "backtester", label: "Backtester" },
+  { id: "edge", label: "Edge" },
+  { id: "exits", label: "Exit lab" },
+  { id: "gauntlet", label: "Gauntlet" },
+  { id: "rules", label: "Rules" },
+  { id: "tuner", label: "Tuner" },
+];
 
 const money = (v: number) => (v ?? 0).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const rColor = (v: number) => (v >= 0 ? "var(--green)" : "var(--red)");
@@ -42,7 +60,7 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
   );
 }
 
-export default function LabPage() {
+function LeaderboardTab() {
   const [strategies, setStrategies] = useState<LabStrategy[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [board, setBoard] = useState<LeaderRow[]>([]);
@@ -178,6 +196,38 @@ export default function LabPage() {
           <Spark curve={sel.equity_curve ?? []} />
         </div>
       )}
+    </div>
+  );
+}
+
+export default function LabPage() {
+  const [tab, setTab] = useState<Tab>("leaderboard");
+  return (
+    <div className="h-full flex flex-col min-h-0">
+      {/* tab bar — the analysis tools live here, under one nav entry */}
+      <div className="flex items-center gap-1 px-3 h-10 shrink-0 overflow-x-auto"
+        style={{ background: "var(--panel)", borderBottom: "1px solid var(--line)" }}>
+        {TABS.map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className="mono text-[11px] px-3 py-1.5 rounded-md whitespace-nowrap"
+            style={{
+              background: tab === t.id ? "var(--panel-2)" : "transparent",
+              color: tab === t.id ? "var(--text)" : "var(--muted)",
+              boxShadow: tab === t.id ? "inset 0 -2px 0 var(--green)" : undefined,
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="grow min-h-0">
+        {tab === "leaderboard" ? <LeaderboardTab />
+          : tab === "backtester" ? <BacktesterPage />
+          : tab === "edge" ? <EdgePage />
+          : tab === "exits" ? <ExitLabPage />
+          : tab === "gauntlet" ? <GauntletPage />
+          : tab === "rules" ? <RulesPage />
+          : <TunerPage />}
+      </div>
     </div>
   );
 }
