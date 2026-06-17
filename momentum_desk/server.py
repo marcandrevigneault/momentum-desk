@@ -323,6 +323,31 @@ async def ibkr_status() -> dict:
     return {"enabled": True, "account_id": client.account_id, "paper": paper, **health.as_dict()}
 
 
+@app.get("/api/ibkr/portfolio")
+async def ibkr_portfolio() -> dict:
+    """Real IBKR paper-account NAV + open positions, READ-ONLY. Lets the Cockpit
+    show the actual DU… account next to the sim desk before any order is ever
+    placed. Fetches nothing-destructive; never transmits an order."""
+    client = getattr(app.state, "ibkr_client", None)
+    if client is None:
+        return {"enabled": False, "reason": "IBKR not enabled (set IBKR_ENABLED=true)"}
+    try:
+        account_id = client.account_id or await client.resolve_account_id()
+        summary = await client.get_summary(account_id)
+        positions = await client.get_positions(account_id)
+    except Exception as e:  # noqa: BLE001 — gateway may be unauthenticated/down
+        return {"enabled": True, "ok": False, "reason": str(e)}
+    paper = account_id.upper().startswith("DU")
+    return {
+        "enabled": True, "ok": True, "account_id": account_id, "paper": paper,
+        "nav": float(summary.nav), "cash": float(summary.cash),
+        "unrealized_pnl": float(summary.unrealized_pnl),
+        "realized_pnl": None if summary.realized_pnl is None else float(summary.realized_pnl),
+        "positions": [{"symbol": p.symbol, "quantity": p.quantity, "avg_price": p.avg_price}
+                      for p in positions],
+    }
+
+
 # ---- Strategy Lab: one API over strategies, runs, the ranked leaderboard, and
 # the active pick (consolidates what the analyser/sim/combo/optimize pages did).
 

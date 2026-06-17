@@ -27,6 +27,12 @@ def test_live_intent_unavailable_until_attached():
         assert "reason" in j
 
 
+def test_ibkr_portfolio_disabled_by_default():
+    with TestClient(app) as c:
+        j = c.get("/api/ibkr/portfolio").json()
+        assert j["enabled"] is False and "reason" in j
+
+
 def test_live_intent_available_when_strategy_attached():
     with TestClient(app) as c:
         strat = Strategy(name="Live test", kind="single", session="intraday",

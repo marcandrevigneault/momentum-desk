@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getLiveIntent, getTrades, type LiveIntent } from "../api";
+import { getIbkrPortfolio, getLiveIntent, getTrades, type IbkrPortfolio, type LiveIntent } from "../api";
 import DetailPanel from "../components/DetailPanel";
 import Positions from "../components/Positions";
 import ScannerTable from "../components/ScannerTable";
@@ -43,6 +43,32 @@ function LiveEngineBadge() {
   );
 }
 
+function IbkrBadge() {
+  const [pf, setPf] = useState<IbkrPortfolio | null>(null);
+  useEffect(() => {
+    let on = true;
+    const tick = () => getIbkrPortfolio().then((r) => on && setPf(r)).catch(() => {});
+    tick();
+    const id = setInterval(tick, 15000);
+    return () => { on = false; clearInterval(id); };
+  }, []);
+  if (!pf?.enabled) return null;             // IBKR off → nothing to show
+  if (!pf.ok) {
+    return (
+      <span className="badge" style={{ color: "var(--amber)", borderColor: "var(--amber)" }}
+            title={pf.reason}>🏦 IBKR gateway not ready</span>
+    );
+  }
+  const c = pf.paper ? "var(--green)" : "var(--red)";
+  const npos = pf.positions?.length ?? 0;
+  return (
+    <span className="badge inline-flex items-center gap-1.5" style={{ color: c, borderColor: c }}
+          title={`Real IBKR ${pf.paper ? "paper" : "LIVE"} account ${pf.account_id} — read-only. ${npos} open position(s). Cash ${money(pf.cash ?? 0)}.`}>
+      🏦 IBKR {pf.paper ? "paper" : "LIVE"} {pf.account_id} · NAV {money(pf.nav ?? 0)} · {npos} pos
+    </span>
+  );
+}
+
 function Kpi({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <span className="mono text-[12px]" style={{ color: "var(--muted)" }}>
@@ -81,6 +107,7 @@ export default function CockpitPage() {
           </span>
         )}
         <LiveEngineBadge />
+        <IbkrBadge />
         <div className="ml-auto flex items-center gap-5">
           {acct && (
             <>
