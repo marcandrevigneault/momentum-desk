@@ -153,3 +153,41 @@ export async function pollJob(id: string) {
   const r = await fetch(`/api/backtest/job/${id}`);
   return r.json();
 }
+
+// ---- Strategy Lab ----
+export interface LabStrategy {
+  name: string; kind: string; session: string; exit_policy: string;
+  sizing: { mode: string; risk_pct: number };
+  max_concurrent: number; legs: { name: string; session: string; style: string }[];
+}
+export interface LeaderRow {
+  id: number; strategy: string; kind: string; window: string; data_source: string;
+  generated: string; final_equity: number; metrics: Record<string, number>;
+}
+
+export async function getLabStrategies(): Promise<{ strategies: LabStrategy[]; active: string | null }> {
+  const r = await fetch("/api/lab/strategies");
+  return r.json();
+}
+export async function getLeaderboard(rankBy = "expectancy_r"): Promise<LeaderRow[]> {
+  const r = await fetch(`/api/lab/leaderboard?rank_by=${rankBy}`);
+  return (await r.json()).runs ?? [];
+}
+export async function runLabStrategy(name: string, window: string): Promise<{ ok: boolean; run_id: number; result: any }> {
+  const r = await fetch("/api/lab/run", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, window }),
+  });
+  return r.json();
+}
+export async function getLabRun(id: number): Promise<any> {
+  const r = await fetch(`/api/lab/runs/${id}`);
+  return r.json();
+}
+export async function setLabActive(name: string): Promise<{ ok: boolean; active: string }> {
+  const r = await fetch("/api/lab/active", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  return r.json();
+}
