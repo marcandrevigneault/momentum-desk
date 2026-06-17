@@ -22,7 +22,7 @@ RUN npm run build
 FROM voyz/ibeam:latest AS ibeam-src
 
 # ---------- Stage 3: python runtime ----------
-FROM python:3.12-slim-bookworm AS base
+FROM python:3.11-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

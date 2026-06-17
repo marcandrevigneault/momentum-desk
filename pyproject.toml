@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "momentum-desk"
 version = "0.1.0"
 description = "Fast low-float momentum scanner with a mechanical risk engine, paper-first, for IBKR"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
@@ -25,7 +25,7 @@ include = ["momentum_desk*"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
