@@ -3,7 +3,6 @@ import {
   getLabRun, getLabStrategies, getLeaderboard, LabStrategy, LeaderRow,
   renameLabStrategy, setLabActive,
 } from "../api";
-import BacktesterPage from "./BacktesterPage";
 import EdgePage from "./EdgePage";
 import ExitLabPage from "./ExitLabPage";
 import GauntletPage from "./GauntletPage";
@@ -15,10 +14,9 @@ import TunerPage from "./TunerPage";
 // Consolidates Analyser/Simulation/Combo (-> Leaderboard) and hosts the edge
 // pipeline + tuners as sub-views, all under one nav entry.
 
-type Tab = "leaderboard" | "backtester" | "edge" | "exits" | "gauntlet" | "rules" | "tuner";
+type Tab = "leaderboard" | "edge" | "exits" | "gauntlet" | "rules" | "tuner";
 const TABS: { id: Tab; label: string }[] = [
   { id: "leaderboard", label: "Leaderboard" },
-  { id: "backtester", label: "Backtester" },
   { id: "edge", label: "Edge" },
   { id: "exits", label: "Exit lab" },
   { id: "gauntlet", label: "Gauntlet" },
@@ -185,10 +183,9 @@ function LeaderboardTab() {
           {/* internals — what this strategy actually IS */}
           {strat && (
             <div className="flex flex-wrap gap-2 text-[11px]">
-              <Chip k="kind" v={strat.kind} />
-              {strat.kind === "combo"
-                ? strat.legs.map((l, i) => <Chip key={i} k={`leg ${i + 1}`} v={`${l.session}·${l.style}`} />)
-                : <Chip k="session" v={strat.session} />}
+              {strat.legs.length > 1
+                ? strat.legs.map((l, i) => <Chip key={i} k={`leg ${i + 1}`} v={`${l.session} · ${l.style}`} />)
+                : <Chip k="entry" v={`${strat.session} · ${strat.legs[0]?.style ?? "momentum"}`} />}
               <Chip k="exit" v={strat.exit_policy} />
               <Chip k="sizing" v={`${strat.sizing.mode} ${strat.sizing.risk_pct}%`} />
               <Chip k="max conc." v={String(strat.max_concurrent)} />
@@ -303,7 +300,6 @@ export default function LabPage() {
       </div>
       <div className="grow min-h-0">
         {tab === "leaderboard" ? <LeaderboardTab />
-          : tab === "backtester" ? <BacktesterPage />
           : tab === "edge" ? <EdgePage />
           : tab === "exits" ? <ExitLabPage />
           : tab === "gauntlet" ? <GauntletPage />
