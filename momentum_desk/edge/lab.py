@@ -61,18 +61,23 @@ def run_only(strategy: Strategy, *, window: str = "1y", data_source: str | None 
 
 
 def seed(store: LabStore) -> None:
-    """Register the canonical strategies and, if the store has no runs yet, load
-    the committed real-data seed so the leaderboard is populated immediately."""
-    if not store.list_strategies():
-        for s in CANONICAL:
-            store.save_strategy(s)
-    if os.environ.get("LAB_SEED", "").lower() == "off":   # tests skip the heavy seed
-        return
-    if not store.leaderboard() and SEED_PATH.exists():
+    """Register the seed strategies (canonical + the optimizer sweep) and, if the
+    store has no runs yet, load the committed real-data runs so the leaderboard is
+    populated and ranked immediately."""
+    test_mode = os.environ.get("LAB_SEED", "").lower() == "off"
+    data = {}
+    if SEED_PATH.exists() and not test_mode:
         try:
             data = json.loads(SEED_PATH.read_text())
         except Exception:  # noqa: BLE001
-            return
+            data = {}
+    if not store.list_strategies():
+        strats = [Strategy.from_dict(c) for c in data["strategies"]] if data.get("strategies") else CANONICAL
+        for s in strats:
+            store.save_strategy(s)
+    if test_mode:
+        return
+    if not store.leaderboard():
         for run in data.get("runs", []):
             store.add_run_raw(run["strategy"], run.get("kind", "single"), run["window"],
                               run.get("data_source", "polygon"), run["result"])

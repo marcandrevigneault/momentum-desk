@@ -126,10 +126,14 @@ function LeaderboardTab() {
       </div>
 
       {/* leaderboard — one row per strategy, its cached run for the window */}
-      <div className="rounded-lg" style={{ background: "var(--panel)", border: "1px solid var(--line)" }}>
+      <div className="rounded-lg overflow-hidden" style={{ background: "var(--panel)", border: "1px solid var(--line)" }}>
+        <div className="px-3 py-1.5 text-[11px] flex items-center" style={{ borderBottom: "1px solid var(--line)", color: "var(--muted)" }}>
+          <span><b style={{ color: "var(--text)" }}>{board.length}</b> strategies · {win} · ranked by {RANKS.find((r) => r.k === rankBy)?.label}</span>
+        </div>
+        <div className="overflow-auto" style={{ maxHeight: 420 }}>
         <table className="w-full text-[12px]">
           <thead>
-            <tr style={{ color: "var(--muted)" }} className="text-left">
+            <tr style={{ color: "var(--muted)", background: "var(--panel)" }} className="text-left sticky top-0">
               <th className="px-3 py-1.5 font-medium">#</th>
               <th className="px-3 py-1.5 font-medium"></th>
               <th className="px-3 py-1.5 font-medium">Strategy</th>
@@ -165,6 +169,7 @@ function LeaderboardTab() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* selected run — internals, metrics, monthly, trade log */}
