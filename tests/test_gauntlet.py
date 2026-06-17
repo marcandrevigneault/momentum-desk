@@ -4,14 +4,9 @@ from __future__ import annotations
 import math
 
 from momentum_desk.backtest.providers import SyntheticHistory
-from momentum_desk.edge.gauntlet import (
-    _expected_max_sharpe,
-    _norm_cdf,
-    _norm_ppf,
-    _psr,
-    run_gauntlet,
-)
+from momentum_desk.edge.gauntlet import run_gauntlet
 from momentum_desk.edge.screen import ScreenConfig
+from momentum_desk.edge.stats import _expected_max_sharpe, _norm_cdf, _norm_ppf, _psr
 
 
 def test_norm_roundtrip():

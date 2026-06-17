@@ -24,8 +24,8 @@ from dataclasses import dataclass, field
 
 from ..backtest.data import HistoricalProvider, MinuteBar
 from .exits import ExitPolicy, simulate_exit
-from .gauntlet import _expected_max_sharpe, _psr, _sharpe, _skew_kurt, _std
 from .screen import ScreenConfig, _find_event, _passes_gate
+from .stats import _expected_max_sharpe, _psr, _sharpe, _skew_kurt, _std
 
 
 @dataclass
