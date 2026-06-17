@@ -99,6 +99,18 @@ class IBKRCPBroker:
     def summary(self) -> AccountSummary:
         return self._run(self._client.get_summary(self.account_id))
 
+    def nav(self) -> float | None:
+        """Live net-liquidation value, so the trader can size off the current
+        book (1% of NAV = compounding). Returns None if the gateway can't report
+        it — the caller then leaves sizing at its configured equity."""
+        if self._client is None:
+            return None
+        try:
+            return float(self._run(self._client.get_summary(self.account_id)).nav)
+        except (IBKRError, TypeError, ValueError) as e:
+            log.warning("nav failed: %s", e)
+            return None
+
     def positions(self) -> list[Position]:
         if self._client is None:
             return []
@@ -140,6 +152,10 @@ class IBKRCPBroker:
         elif order.type is OrderType.STP:
             payload = order_builders.build_stop_order(
                 self.account_id, conid, side, order.quantity, order.stop_price
+            )
+        elif order.type is OrderType.TRAIL:
+            payload = order_builders.build_trailing_stop_order(
+                self.account_id, conid, side, order.quantity, order.trailing_percent
             )
         else:
             payload = order_builders.build_market_order(self.account_id, conid, side, order.quantity)

@@ -87,6 +87,32 @@ def build_limit_order(
     }
 
 
+def build_trailing_stop_order(
+    account_id: str,
+    conid: int,
+    side: OrderSide,
+    quantity: Decimal | int | float,
+    trailing_percent: Decimal | int | float,
+    *,
+    tif: TIF = "GTC",
+    outside_rth: bool = False,
+) -> dict:
+    """A broker-managed trailing stop (IBKR ratchets it behind price). The desk
+    pairs every entry with one of these so the protection survives a loop crash."""
+    return {
+        "acctId": account_id,
+        "conid": int(conid),
+        "orderType": "TRAIL",
+        "side": side,
+        "quantity": _num(quantity),
+        "trailingType": "%",
+        "trailingAmt": _num(trailing_percent),
+        "tif": tif,
+        "cOID": uuid4().hex,
+        "outsideRTH": outside_rth,
+    }
+
+
 def build_bracket(
     *,
     account_id: str,
