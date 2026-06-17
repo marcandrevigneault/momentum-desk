@@ -116,32 +116,39 @@ class LabStore:
     # ---- runs -------------------------------------------------------------
 
     def save_run(self, strategy: Strategy, window: str, data_source: str, result: AccountRun) -> int:
+        return self.add_run_raw(strategy.name, strategy.kind, window, data_source, asdict(result))
+
+    def add_run_raw(self, strategy: str, kind: str, window: str, data_source: str, result: dict) -> int:
+        """Insert a run from an already-serialized result dict (used by save_run
+        and by the committed seed loader)."""
         cur = self._conn.execute(
             "INSERT INTO runs(strategy, kind, window, data_source, generated, metrics, final_equity, result) "
             "VALUES(?,?,?,?,?,?,?,?)",
-            (strategy.name, strategy.kind, window, data_source, _now(),
-             json.dumps(result.metrics), float(result.final_equity), json.dumps(asdict(result))),
+            (strategy, kind, window, data_source, _now(),
+             json.dumps(result.get("metrics", {})), float(result.get("final_equity", 0.0)),
+             json.dumps(result)),
         )
         self._conn.commit()
         return int(cur.lastrowid)
 
-    def leaderboard(self, *, rank_by: str = _DEFAULT_RANK, limit: int = 100) -> list[dict]:
-        """Runs ranked by a metric (descending; drawdown ranks ascending — lower
-        is better). Returns lightweight rows for the table, not the full result."""
+    def leaderboard(self, *, rank_by: str = _DEFAULT_RANK, window: str | None = None,
+                    limit: int = 100) -> list[dict]:
+        """Runs ranked by a metric (descending; drawdown ascending — lower is
+        better). Only the LATEST run per strategy is shown (one row each), and
+        optionally filtered to a window. Lightweight rows, not the full result."""
         col = rank_by if rank_by in RANKABLE else _DEFAULT_RANK
         ascending = col == "max_drawdown_pct"
-        rows = self._conn.execute(
-            f"SELECT id, strategy, kind, window, data_source, generated, metrics, final_equity "
-            f"FROM runs ORDER BY CAST(json_extract(metrics, '$.{col}') AS REAL) "
-            f"{'ASC' if ascending else 'DESC'} LIMIT ?",
-            (limit,),
-        ).fetchall()
-        out = []
-        for r in rows:
-            d = dict(r)
-            d["metrics"] = json.loads(d["metrics"])
-            out.append(d)
-        return out
+        # latest run per (strategy, window) via MAX(id); optionally filter window
+        sql = ("SELECT id, strategy, kind, window, data_source, generated, metrics, final_equity "
+               "FROM runs WHERE id IN (SELECT MAX(id) FROM runs GROUP BY strategy, window)")
+        params: tuple = ()
+        if window:
+            sql += " AND window = ?"
+            params = (window,)
+        rows = self._conn.execute(sql, params).fetchall()
+        out = [{**dict(r), "metrics": json.loads(dict(r)["metrics"])} for r in rows]
+        out.sort(key=lambda d: float(d["metrics"].get(col, 0.0)), reverse=not ascending)
+        return out[:limit]
 
     def get_run(self, run_id: int) -> dict | None:
         row = self._conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()

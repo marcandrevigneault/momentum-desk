@@ -254,8 +254,9 @@ async def lab_rename_strategy(name: str, payload: dict) -> dict:
 
 
 @app.get("/api/lab/leaderboard")
-async def lab_leaderboard(rank_by: str = "expectancy_r", limit: int = 100) -> dict:
-    return {"rank_by": rank_by, "runs": app.state.lab.leaderboard(rank_by=rank_by, limit=limit)}
+async def lab_leaderboard(rank_by: str = "expectancy_r", window: str | None = None, limit: int = 100) -> dict:
+    return {"rank_by": rank_by, "window": window,
+            "runs": app.state.lab.leaderboard(rank_by=rank_by, window=window, limit=limit)}
 
 
 @app.get("/api/lab/runs/{run_id}")
@@ -269,7 +270,7 @@ async def lab_run_strategy(payload: dict) -> dict:
     """Run a strategy (by name from the store, or an inline config) on synthetic
     data over the window, persist it, and return the result. Heavy work runs off
     the event loop."""
-    from .edge.lab import run_only
+    from .edge.lab import best_data_source, run_only
     from .edge.strategy import Strategy
     name = payload.get("name")
     window = payload.get("window", "1y")
@@ -279,9 +280,10 @@ async def lab_run_strategy(payload: dict) -> dict:
     if strat is None:
         return {"ok": False, "error": "provide a known strategy name or an inline strategy config"}
     # compute off the event loop; write to the DB on this (the connection's) thread
-    result = await asyncio.to_thread(run_only, strat, window=window)
-    run_id = app.state.lab.save_run(strat, window, "synthetic", result)
-    return {"ok": True, "run_id": run_id, "window": window, **asdict_result(result)}
+    ds = best_data_source()
+    result = await asyncio.to_thread(run_only, strat, window=window, data_source=ds)
+    run_id = app.state.lab.save_run(strat, window, ds, result)
+    return {"ok": True, "run_id": run_id, "window": window, "data_source": ds, **asdict_result(result)}
 
 
 @app.get("/api/lab/active")
