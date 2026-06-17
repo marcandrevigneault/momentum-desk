@@ -11,3 +11,6 @@ web/dist
 data/
 journal/
 config.yaml
+gateway/
+gateway.zip
+logs/

@@ -17,7 +17,12 @@ config.local.yaml
 *.log
 data/
 journal/
+logs/
 *.sqlite
+
+# IBKR Client Portal Gateway — downloaded locally by scripts/install_gateway.sh
+gateway/
+gateway.zip
 
 # Web frontend
 web/node_modules/

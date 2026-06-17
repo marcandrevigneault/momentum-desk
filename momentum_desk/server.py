@@ -147,7 +147,30 @@ async def lifespan(app: FastAPI):
     cfg = app.state.service.cfg
     print(f"[server] feed={app.state.service.adapter.name} mode={cfg.mode} "
           f"interval={cfg.scan_interval_s}s")
+
+    # IBKR Client Portal keepalive — only when enabled (set IBKR_ENABLED=true in
+    # the container, where the gateway + ibeam run). The tickle loop swallows its
+    # own errors, so a not-yet-authenticated gateway just logs and retries.
+    app.state.ibkr_client = None
+    app.state.ibkr_state = {"last_tickle_at": None}
+    app.state.ibkr_task = None
+    if os.environ.get("IBKR_ENABLED", "").strip().lower() in ("1", "true", "yes"):
+        from .broker import cp
+        client = cp.IBKRClient(cfg.ibkr.gateway_url, account_id=cfg.ibkr.account_id)
+        app.state.ibkr_client = client
+        app.state.ibkr_task = asyncio.create_task(
+            cp.keepalive_loop(client, interval_s=60, state=app.state.ibkr_state)
+        )
+        print(f"[server] IBKR CP keepalive started -> {cfg.ibkr.gateway_url}")
+
     yield
+
+    task = getattr(app.state, "ibkr_task", None)
+    if task is not None:
+        task.cancel()
+    client = getattr(app.state, "ibkr_client", None)
+    if client is not None:
+        await client.aclose()
 
 
 app = FastAPI(title="Momentum Desk", lifespan=lifespan)
@@ -168,6 +191,22 @@ if _DASH_PW:
 @app.get("/api/health")
 async def health() -> dict:
     return {"ok": True}
+
+
+@app.get("/api/ibkr/status")
+async def ibkr_status() -> dict:
+    """Live IBKR Client Portal gateway health for the dashboard banner. When the
+    gateway is authenticated (after the one-time phone 2FA), ok=true. Returns
+    enabled=false locally where the gateway isn't running."""
+    client = getattr(app.state, "ibkr_client", None)
+    if client is None:
+        return {"enabled": False, "ok": False,
+                "message": "IBKR not enabled (set IBKR_ENABLED=true to run the gateway)"}
+    from .broker import cp
+    state = getattr(app.state, "ibkr_state", {})
+    health = await cp.check(client, last_tickle_at=state.get("last_tickle_at"))
+    paper = app.state.service.cfg.ibkr.paper
+    return {"enabled": True, "account_id": client.account_id, "paper": paper, **health.as_dict()}
 
 
 @app.get("/api/config")

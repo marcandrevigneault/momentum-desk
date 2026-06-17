@@ -6,23 +6,26 @@ build-backend = "setuptools.build_meta"
 name = "momentum-desk"
 version = "0.1.0"
 description = "Fast low-float momentum scanner with a mechanical risk engine, paper-first, for IBKR"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "pyyaml",
+    "httpx",        # IBKR Client Portal REST client + the WAF re-proxy (also backs TestClient)
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "httpx"]   # httpx backs fastapi's TestClient
-broker = ["ib-async"]          # IBKR connectivity (paper-first)
+dev = ["pytest", "ruff"]
+broker = ["ib-async"]          # legacy socket adapter (TWS/Gateway); the CP flow needs no extra
+# IBKR Client Portal Gateway + ibeam auto-login run as separate processes in the
+# container (see Dockerfile / deploy/supervisord.conf), not as Python deps here.
 
 [tool.setuptools.packages.find]
 include = ["momentum_desk*"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
