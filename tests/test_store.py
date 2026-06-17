@@ -75,6 +75,14 @@ def test_rename_repoints_history_and_active(store):
     assert store.rename_strategy("ghost", "x") is False
 
 
+def test_gauntlet_store(store):
+    assert store.get_gauntlet("intraday|pct_trail_10") is None
+    store.save_gauntlet("intraday|pct_trail_10", {"verdict": "SURVIVES", "dsr": 1.0})
+    assert store.get_gauntlet("intraday|pct_trail_10")["verdict"] == "SURVIVES"
+    store.save_gauntlet("intraday|pct_trail_10", {"verdict": "FRAGILE"})   # upsert
+    assert store.get_gauntlet("intraday|pct_trail_10")["verdict"] == "FRAGILE"
+
+
 def test_active_selection(store):
     assert store.get_active() is None
     store.set_active("intraday")

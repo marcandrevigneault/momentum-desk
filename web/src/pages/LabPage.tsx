@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  getLabRun, getLabStrategies, getLeaderboard, LabStrategy, LeaderRow,
+  getLabGauntlet, getLabRun, getLabStrategies, getLeaderboard, LabStrategy, LeaderRow,
   renameLabStrategy, setLabActive,
 } from "../api";
 import EdgePage from "./EdgePage";
@@ -76,6 +76,7 @@ function LeaderboardTab() {
   const [win, setWin] = useState("1y");
   const [selected, setSelected] = useState<any | null>(null);
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
+  const [gaunt, setGaunt] = useState<any | null>(null);
 
   const reloadBoard = async (rb = rankBy, w = win) => setBoard(await getLeaderboard(rb, w));
   const reloadStrats = async () => {
@@ -85,7 +86,11 @@ function LeaderboardTab() {
   useEffect(() => { reloadStrats(); }, []);
   useEffect(() => { reloadBoard(rankBy, win); }, [rankBy, win]);
 
-  const pickRow = async (r: LeaderRow) => { setMonthFilter(null); setSelected(await getLabRun(r.id)); };
+  const pickRow = async (r: LeaderRow) => {
+    setMonthFilter(null); setGaunt(null);
+    setSelected(await getLabRun(r.id));
+    setGaunt(await getLabGauntlet(r.strategy));
+  };
   const makeActive = async (e: any, name: string) => { e.stopPropagation(); await setLabActive(name); setActive(name); };
 
   const sel = selected?.result;
@@ -196,6 +201,43 @@ function LeaderboardTab() {
               <Chip k="max conc." v={String(strat.max_concurrent)} />
             </div>
           )}
+
+          {/* robustness — does THIS entry survive honest scrutiny? */}
+          {gaunt && (gaunt.available ? (() => {
+            const g = gaunt.gauntlet;
+            const word = (g.verdict || "").split(/[\s—-]/)[0].toUpperCase();
+            const vColor = word === "SURVIVES" ? "var(--green)" : word === "FAILS" ? "var(--red)" : "#caa24a";
+            const pct = (x: number) => `${Math.round((x ?? 0) * 100)}%`;
+            return (
+              <div className="rounded-lg p-2.5" style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}>
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="text-[11px] font-semibold">Robustness · Gauntlet</span>
+                  <span className="mono text-[11px] px-2 py-0.5 rounded font-bold" style={{ color: vColor, border: `1px solid ${vColor}` }}>{word}</span>
+                  <span className="text-[10px]" style={{ color: "var(--muted)" }}>{g.verdict}</span>
+                </div>
+                <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))" }}>
+                  <Stat label="P(edge > 0)" value={pct(g.boot_p_pos)} color={g.boot_p_pos >= 0.95 ? "var(--green)" : undefined} />
+                  <Stat label="Boot 95% CI" value={`${(g.boot_lo ?? 0).toFixed(2)}…${(g.boot_hi ?? 0).toFixed(2)}R`} color={rColor(g.boot_lo ?? 0)} />
+                  <Stat label="Deflated Sharpe" value={pct(g.dsr)} color={g.dsr >= 0.95 ? "var(--green)" : "var(--red)"} />
+                  <Stat label="Walk-fwd OOS" value={`${(g.wf_oos_exp ?? 0).toFixed(3)}R`} color={rColor(g.wf_oos_exp ?? 0)} />
+                  <Stat label="Months +" value={pct(g.months_pos_frac)} />
+                  <Stat label="Holdout exp" value={`${(g.holdout_exp ?? 0).toFixed(3)}R`} color={rColor(g.holdout_exp ?? 0)} />
+                </div>
+                {(g.checks ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2 text-[10px]">
+                    {g.checks.map((c: any, i: number) => (
+                      <span key={i} className="mono px-1.5 py-0.5 rounded" title={c.detail}
+                        style={{ border: "1px solid var(--line)", color: c.status === "pass" ? "var(--green)" : c.status === "fail" ? "var(--red)" : "#caa24a" }}>
+                        {c.status === "pass" ? "✓" : c.status === "fail" ? "✕" : "!"} {c.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })() : (
+            <div className="text-[11px]" style={{ color: "var(--muted)" }}>Robustness: {gaunt.reason}</div>
+          ))}
 
           {/* headline metrics */}
           <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))" }}>
