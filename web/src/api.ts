@@ -199,6 +199,15 @@ export async function getLabDryrun(strategy: string): Promise<{ available: boole
   const r = await fetch(`/api/lab/dryrun?strategy=${encodeURIComponent(strategy)}`);
   return r.json();
 }
+export interface LiveIntent {
+  available: boolean; armed: boolean; reason?: string;
+  strategy?: string; session?: string; day?: string; in_session?: boolean;
+  watching?: string[]; holding?: any[]; closed?: any[]; day_pnl?: number; intent?: any[];
+}
+export async function getLiveIntent(): Promise<LiveIntent> {
+  const r = await fetch("/api/live/intent");
+  return r.json();
+}
 export async function renameLabStrategy(name: string, newName: string): Promise<{ ok: boolean; error?: string }> {
   const r = await fetch(`/api/lab/strategies/${encodeURIComponent(name)}/rename`, {
     method: "POST", headers: { "Content-Type": "application/json" },

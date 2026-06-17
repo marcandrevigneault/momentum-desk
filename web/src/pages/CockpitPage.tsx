@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getTrades } from "../api";
+import { getLiveIntent, getTrades, type LiveIntent } from "../api";
 import DetailPanel from "../components/DetailPanel";
 import Positions from "../components/Positions";
 import ScannerTable from "../components/ScannerTable";
@@ -22,6 +22,26 @@ function ConnBadge({ state, feed }: { state: ConnState; feed?: string }) {
 }
 
 const money = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+function LiveEngineBadge() {
+  const [li, setLi] = useState<LiveIntent | null>(null);
+  useEffect(() => {
+    let on = true;
+    const tick = () => getLiveIntent().then((r) => on && setLi(r)).catch(() => {});
+    tick();
+    const id = setInterval(tick, 10000);
+    return () => { on = false; clearInterval(id); };
+  }, []);
+  if (!li?.available) return null;   // engine off / multi-leg active → nothing to show
+  const pnl = li.day_pnl ?? 0;
+  const c = li.armed ? "var(--red)" : "var(--blue, #5b8def)";
+  return (
+    <span className="badge inline-flex items-center gap-1.5" style={{ color: c, borderColor: c }}
+          title={`Reconciled engine on the live tape for "${li.strategy}" — ${li.armed ? "ARMED" : "dry-run, nothing transmitted"}. Watching ${li.watching?.length ?? 0}, holding ${li.holding?.length ?? 0}, ${li.closed?.length ?? 0} closed today.`}>
+      🤖 engine {li.armed ? "ARMED" : "dry-run"} · watch {li.watching?.length ?? 0} · hold {li.holding?.length ?? 0} · {pnl >= 0 ? "+" : ""}{money(pnl)}
+    </span>
+  );
+}
 
 function Kpi({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
@@ -60,6 +80,7 @@ export default function CockpitPage() {
             ⏱ 15-min delayed · observe only
           </span>
         )}
+        <LiveEngineBadge />
         <div className="ml-auto flex items-center gap-5">
           {acct && (
             <>
