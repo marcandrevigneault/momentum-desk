@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  getLabGauntlet, getLabRun, getLabStrategies, getLeaderboard, LabStrategy, LeaderRow,
+  getLabDryrun, getLabGauntlet, getLabRun, getLabStrategies, getLeaderboard, LabStrategy, LeaderRow,
   renameLabStrategy, setLabActive,
 } from "../api";
 import EdgePage from "./EdgePage";
@@ -77,6 +77,7 @@ function LeaderboardTab() {
   const [selected, setSelected] = useState<any | null>(null);
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
   const [gaunt, setGaunt] = useState<any | null>(null);
+  const [dry, setDry] = useState<any | null>(null);
 
   const reloadBoard = async (rb = rankBy, w = win) => setBoard(await getLeaderboard(rb, w));
   const reloadStrats = async () => {
@@ -87,9 +88,10 @@ function LeaderboardTab() {
   useEffect(() => { reloadBoard(rankBy, win); }, [rankBy, win]);
 
   const pickRow = async (r: LeaderRow) => {
-    setMonthFilter(null); setGaunt(null);
+    setMonthFilter(null); setGaunt(null); setDry(null);
     setSelected(await getLabRun(r.id));
     setGaunt(await getLabGauntlet(r.strategy));
+    setDry(await getLabDryrun(r.strategy));
   };
   const makeActive = async (e: any, name: string) => { e.stopPropagation(); await setLabActive(name); setActive(name); };
 
@@ -188,7 +190,22 @@ function LeaderboardTab() {
               style={{ background: "var(--panel-2)", border: "1px solid var(--line)", color: "var(--text)" }}
               title="rename this strategy" />
             <span className="mono text-[11px]" style={{ color: "var(--muted)" }}>{selected.window} · {selected.data_source}</span>
+            {active === selected.strategy && <span className="mono text-[10px] px-2 py-0.5 rounded" style={{ color: "var(--green)", border: "1px solid var(--green)" }}>★ ACTIVE</span>}
           </div>
+
+          {/* live dry-run preview — what the reconciled engine would trade */}
+          {dry && dry.available && dry.day && (
+            <div className="rounded-lg px-3 py-2 text-[11px]" style={{ background: "var(--panel-2)", border: "1px dashed var(--green)" }}>
+              <span className="font-semibold" style={{ color: "var(--green)" }}>● Live dry-run</span>
+              <span className="ml-2">on <span className="mono">{dry.day}</span> the reconciled engine would place </span>
+              <span className="mono font-semibold">{dry.orders.length}</span> orders ·
+              <span className="mono" style={{ color: rColor(dry.day_pnl ?? 0) }}> {money2(dry.day_pnl ?? 0)}</span> day P&amp;L
+              <span style={{ color: "var(--muted)" }}> — provably == the backtest, <b>nothing transmitted</b>. Rehearse off your paper NAV: <span className="mono">python -m scripts.lab_dryrun</span></span>
+            </div>
+          )}
+          {dry && !dry.available && (
+            <div className="text-[10px]" style={{ color: "var(--muted)" }}>Live dry-run: {dry.reason}</div>
+          )}
 
           {/* internals — what this strategy actually IS */}
           {strat && (
