@@ -22,7 +22,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from .backtest.data import MinuteBar
 from .config import AppConfig, build_adapter, load_config
+from .live_feed import MinuteBarAggregator
 from .models import Signal, Snapshot
 from .paper import PaperDesk
 from .risk import RiskEngine
@@ -42,6 +44,19 @@ class ScannerService:
         self.desk = PaperDesk(self.risk)
         self.history: dict[str, list[dict]] = {}
         self.last_price: dict[str, float] = {}
+        # live tape → closed MinuteBars (the shape the reconciled engine eats);
+        # retained per symbol so /api/live/bars can show the live feed is sound.
+        self.aggregator = MinuteBarAggregator()
+        self.live_bars: dict[str, list[MinuteBar]] = {}
+
+    def _aggregate(self, snaps: list[Snapshot]) -> None:
+        for s in snaps:
+            bar = self.aggregator.ingest(s)
+            if bar is not None:
+                buf = self.live_bars.setdefault(s.symbol, [])
+                buf.append(bar)
+                if len(buf) > _HISTORY_CAP:
+                    del buf[: len(buf) - _HISTORY_CAP]
 
     def _record_history(self, snaps: list[Snapshot]) -> None:
         for s in snaps:
@@ -59,6 +74,7 @@ class ScannerService:
         snaps = await asyncio.to_thread(lambda: list(self.adapter.poll()))
         by_symbol = {s.symbol: s for s in snaps}
         self._record_history(snaps)
+        self._aggregate(snaps)
         self.desk.update(self.last_price)   # trail stops + auto-exit on stop/target
         signals = self.scanner.scan(snaps)
         prices = self.last_price
@@ -419,6 +435,26 @@ async def positions() -> dict:
 @app.get("/api/trades")
 async def trades() -> dict:
     return {"trades": app.state.service.desk.trades_view()}
+
+
+@app.get("/api/live/bars/{symbol}")
+async def live_bars(symbol: str, limit: int = 60) -> dict:
+    """The closed MinuteBars the live aggregator has built from the tape for one
+    symbol — the exact shape the reconciled engine consumes. Observability for
+    the live feed; transmits nothing, places nothing."""
+    from dataclasses import asdict
+    svc: ScannerService = app.state.service
+    bars = svc.live_bars.get(symbol.upper(), [])[-limit:]
+    return {"symbol": symbol.upper(), "feed": svc.adapter.name,
+            "count": len(bars), "bars": [asdict(b) for b in bars]}
+
+
+@app.get("/api/live/bars")
+async def live_bars_index() -> dict:
+    """Which symbols the live aggregator currently has closed bars for."""
+    svc: ScannerService = app.state.service
+    return {"feed": svc.adapter.name,
+            "symbols": {sym: len(bars) for sym, bars in sorted(svc.live_bars.items())}}
 
 
 @app.post("/api/backtest")
