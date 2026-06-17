@@ -15,6 +15,7 @@ edge" — e.g. "RVOL decile 10 = +0.4R, decile 1 = -0.2R, IC +0.18".
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 from ..backtest.data import MARKET_OPEN_TOD, DayCandidate, HistoricalProvider, MinuteBar
@@ -203,8 +204,32 @@ def _passes_gate(c: DayCandidate, cfg: ScreenConfig) -> bool:
     return True
 
 
-def build_events(provider: HistoricalProvider, cfg: ScreenConfig) -> list[EventRow]:
-    rows: list[EventRow] = []
+@dataclass
+class EntryEvent:
+    """One triggered entry, before any discretionary filtering — the raw unit the
+    edge screen, optimizer and gauntlet all iterate. Consumers apply their own
+    post-filters (e.g. the entry>stop / non-empty-forward guard)."""
+    day: str
+    cand: DayCandidate
+    bars: list[MinuteBar]
+    entry_idx: int
+    entry: float
+    stop: float
+    fwd: list[MinuteBar]
+
+    @property
+    def prior(self) -> list[MinuteBar]:
+        return self.bars[: self.entry_idx + 1]
+
+    @property
+    def entry_bar(self) -> MinuteBar:
+        return self.bars[self.entry_idx]
+
+
+def iter_entry_events(provider: HistoricalProvider, cfg: ScreenConfig) -> Iterator[EntryEvent]:
+    """The single entry-scan core: for each trading day, for each gated candidate,
+    find the session breakout and yield the raw event. This is the one place the
+    'days → candidates → gate → minutes → find_event' loop lives."""
     for day in provider.trading_days():
         for cand in provider.candidates(day):
             if not _passes_gate(cand, cfg):
@@ -215,15 +240,22 @@ def build_events(provider: HistoricalProvider, cfg: ScreenConfig) -> list[EventR
             ev = _find_event(bars, cfg)
             if ev is None:
                 continue
-            entry_idx, entry_price, stop, fwd = ev
-            ctx = FeatureContext(cand=cand, bars=bars[: entry_idx + 1],
-                                 entry_idx=entry_idx, entry_price=entry_price, session=cfg.session)
-            feats = {f.name: f.fn(ctx) for f in FEATURES}
-            fwd_r, mfe_r, mae_r = _forward_r(entry_price, stop, fwd, cfg.target_r)
-            fixed_r, ret_pct = _forward_fixed(entry_price, fwd, cfg.fixed_stop_pct, cfg.target_r)
-            rows.append(EventRow(day=day, symbol=cand.symbol, features=feats,
-                                 fwd_r=round(fwd_r, 4), mfe_r=round(mfe_r, 4), mae_r=round(mae_r, 4),
-                                 fwd_r_fixed=round(fixed_r, 4), fwd_ret_pct=round(ret_pct, 4)))
+            entry_idx, entry, stop, fwd = ev
+            yield EntryEvent(day=day, cand=cand, bars=bars, entry_idx=entry_idx,
+                             entry=entry, stop=stop, fwd=fwd)
+
+
+def build_events(provider: HistoricalProvider, cfg: ScreenConfig) -> list[EventRow]:
+    rows: list[EventRow] = []
+    for ev in iter_entry_events(provider, cfg):
+        ctx = FeatureContext(cand=ev.cand, bars=ev.prior, entry_idx=ev.entry_idx,
+                             entry_price=ev.entry, session=cfg.session)
+        feats = {f.name: f.fn(ctx) for f in FEATURES}
+        fwd_r, mfe_r, mae_r = _forward_r(ev.entry, ev.stop, ev.fwd, cfg.target_r)
+        fixed_r, ret_pct = _forward_fixed(ev.entry, ev.fwd, cfg.fixed_stop_pct, cfg.target_r)
+        rows.append(EventRow(day=ev.day, symbol=ev.cand.symbol, features=feats,
+                             fwd_r=round(fwd_r, 4), mfe_r=round(mfe_r, 4), mae_r=round(mae_r, 4),
+                             fwd_r_fixed=round(fixed_r, 4), fwd_ret_pct=round(ret_pct, 4)))
     return rows
 
 

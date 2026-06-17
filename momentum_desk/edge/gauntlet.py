@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 
 from ..backtest.data import HistoricalProvider
 from .exits import POLICIES, ExitPolicy, simulate_exit
-from .screen import ScreenConfig, _find_event, _passes_gate
+from .screen import ScreenConfig, iter_entry_events
 from .stats import _expected_max_sharpe, _mean, _psr, _sharpe, _skew_kurt, _std
 
 # ---- strategy trades -------------------------------------------------------
@@ -42,23 +42,13 @@ def _all_policy_trades(provider: HistoricalProvider, cfg: ScreenConfig,
     run every exit policy on it. Avoids re-fetching minutes per policy — the
     difference between feasible and not over a multi-year window."""
     out: dict[str, list[_Trade]] = {p.name: [] for p in trials}
-    for day in provider.trading_days():
-        for cand in provider.candidates(day):
-            if not _passes_gate(cand, cfg):
-                continue
-            bars = provider.minutes(cand.symbol, day)
-            if not bars:
-                continue
-            ev = _find_event(bars, cfg)
-            if ev is None:
-                continue
-            entry_idx, entry, stop, fwd = ev
-            if entry - stop <= 0 or not fwd:
-                continue
-            prior = bars[: entry_idx + 1]
-            for p in trials:
-                r, _reason, _held = simulate_exit(entry, stop, prior, fwd, p, slippage_pct)
-                out[p.name].append(_Trade(day=day, r=r))
+    for ev in iter_entry_events(provider, cfg):
+        if ev.entry - ev.stop <= 0 or not ev.fwd:
+            continue
+        prior = ev.prior
+        for p in trials:
+            r, _reason, _held = simulate_exit(ev.entry, ev.stop, prior, ev.fwd, p, slippage_pct)
+            out[p.name].append(_Trade(day=ev.day, r=r))
     return out
 
 
