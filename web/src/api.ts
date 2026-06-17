@@ -169,8 +169,8 @@ export async function getLabStrategies(): Promise<{ strategies: LabStrategy[]; a
   const r = await fetch("/api/lab/strategies");
   return r.json();
 }
-export async function getLeaderboard(rankBy = "expectancy_r"): Promise<LeaderRow[]> {
-  const r = await fetch(`/api/lab/leaderboard?rank_by=${rankBy}`);
+export async function getLeaderboard(rankBy = "expectancy_r", window = "1y"): Promise<LeaderRow[]> {
+  const r = await fetch(`/api/lab/leaderboard?rank_by=${rankBy}&window=${window}`);
   return (await r.json()).runs ?? [];
 }
 export async function runLabStrategy(name: string, window: string): Promise<{ ok: boolean; run_id: number; result: any }> {

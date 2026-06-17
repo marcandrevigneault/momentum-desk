@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   getLabRun, getLabStrategies, getLeaderboard, LabStrategy, LeaderRow,
-  renameLabStrategy, runLabStrategy, setLabActive,
+  renameLabStrategy, setLabActive,
 } from "../api";
 import BacktesterPage from "./BacktesterPage";
 import EdgePage from "./EdgePage";
@@ -76,27 +76,18 @@ function LeaderboardTab() {
   const [board, setBoard] = useState<LeaderRow[]>([]);
   const [rankBy, setRankBy] = useState("expectancy_r");
   const [win, setWin] = useState("1y");
-  const [running, setRunning] = useState<string | null>(null);
   const [selected, setSelected] = useState<any | null>(null);
 
-  const reloadBoard = async (rb = rankBy) => setBoard(await getLeaderboard(rb));
+  const reloadBoard = async (rb = rankBy, w = win) => setBoard(await getLeaderboard(rb, w));
   const reloadStrats = async () => {
     const s = await getLabStrategies();
     setStrategies(s.strategies); setActive(s.active);
   };
   useEffect(() => { reloadStrats(); }, []);
-  useEffect(() => { reloadBoard(rankBy); }, [rankBy]);
+  useEffect(() => { reloadBoard(rankBy, win); }, [rankBy, win]);
 
-  const run = async (name: string) => {
-    setRunning(name);
-    try {
-      const out = await runLabStrategy(name, win);
-      await reloadBoard();
-      if (out.run_id) setSelected(await getLabRun(out.run_id));
-    } finally { setRunning(null); }
-  };
   const pickRow = async (r: LeaderRow) => setSelected(await getLabRun(r.id));
-  const makeActive = async (name: string) => { await setLabActive(name); setActive(name); };
+  const makeActive = async (e: any, name: string) => { e.stopPropagation(); await setLabActive(name); setActive(name); };
 
   const sel = selected?.result;
   const m = sel?.metrics ?? {};
@@ -116,9 +107,14 @@ function LeaderboardTab() {
       {/* header */}
       <div className="flex items-center gap-3 flex-wrap">
         <h2 className="text-[15px] font-bold m-0">Strategy Lab</h2>
-        <span className="text-[12px]" style={{ color: "var(--muted)" }}>define · run · rank · activate — every strategy in one place</span>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-[11px]" style={{ color: "var(--muted)" }}>window</span>
+        <span className="text-[12px]" style={{ color: "var(--muted)" }}>
+          {board[0]?.data_source === "polygon" ? "real Polygon data" : board[0]?.data_source ?? "—"} · ranked · click a row for internals + trades
+        </span>
+        <div className="ml-auto flex items-center gap-3">
+          <select value={rankBy} onChange={(e) => setRankBy(e.target.value)} className="mono text-[11px] px-2 py-1 rounded"
+            style={{ background: "var(--panel-2)", border: "1px solid var(--line)", color: "var(--text)" }}>
+            {RANKS.map((r) => <option key={r.k} value={r.k}>rank · {r.label}</option>)}
+          </select>
           <div className="flex rounded-md overflow-hidden" style={{ border: "1px solid var(--line)" }}>
             {["1y", "5y"].map((w) => (
               <button key={w} onClick={() => setWin(w)} className="mono text-[11px] px-3 py-1"
@@ -130,66 +126,41 @@ function LeaderboardTab() {
         </div>
       </div>
 
-      {/* strategies — run buttons + active */}
-      <div className="flex flex-wrap gap-2">
-        {strategies.map((s) => (
-          <div key={s.name} className="rounded-lg px-3 py-2 flex items-center gap-3"
-            style={{ background: "var(--panel)", border: `1px solid ${active === s.name ? "var(--green)" : "var(--line)"}` }}>
-            <button title="set active" onClick={() => makeActive(s.name)} className="text-[14px]"
-              style={{ color: active === s.name ? "var(--green)" : "var(--muted)" }}>★</button>
-            <div className="flex flex-col">
-              <span className="text-[12px] font-semibold">{s.name}</span>
-              <span className="mono text-[10px]" style={{ color: "var(--muted)" }}>
-                {s.kind}{s.kind === "combo" ? ` · ${s.legs.length} legs` : ` · ${s.session}`} · {s.sizing.mode} {s.sizing.risk_pct}%
-              </span>
-            </div>
-            <button onClick={() => run(s.name)} disabled={running === s.name}
-              className="mono text-[11px] px-2 py-1 rounded"
-              style={{ background: "var(--panel-2)", border: "1px solid var(--line)", color: "var(--text)", opacity: running === s.name ? 0.5 : 1 }}>
-              {running === s.name ? "running…" : `run ${win}`}
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* leaderboard */}
+      {/* leaderboard — one row per strategy, its cached run for the window */}
       <div className="rounded-lg" style={{ background: "var(--panel)", border: "1px solid var(--line)" }}>
-        <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid var(--line)" }}>
-          <span className="text-[12px] font-semibold">Leaderboard</span>
-          <span className="text-[11px] ml-auto" style={{ color: "var(--muted)" }}>rank by</span>
-          <select value={rankBy} onChange={(e) => setRankBy(e.target.value)} className="mono text-[11px] px-2 py-1 rounded"
-            style={{ background: "var(--panel-2)", border: "1px solid var(--line)", color: "var(--text)" }}>
-            {RANKS.map((r) => <option key={r.k} value={r.k}>{r.label}</option>)}
-          </select>
-        </div>
         <table className="w-full text-[12px]">
           <thead>
             <tr style={{ color: "var(--muted)" }} className="text-left">
               <th className="px-3 py-1.5 font-medium">#</th>
+              <th className="px-3 py-1.5 font-medium"></th>
               <th className="px-3 py-1.5 font-medium">Strategy</th>
-              <th className="px-3 py-1.5 font-medium">Win</th>
               <th className="px-3 py-1.5 font-medium mono">expR</th>
               <th className="px-3 py-1.5 font-medium mono">PF</th>
               <th className="px-3 py-1.5 font-medium mono">win%</th>
               <th className="px-3 py-1.5 font-medium mono">maxDD%</th>
+              <th className="px-3 py-1.5 font-medium mono">return</th>
               <th className="px-3 py-1.5 font-medium mono">final</th>
             </tr>
           </thead>
           <tbody>
             {board.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-4 text-center" style={{ color: "var(--muted)" }}>
-                No runs yet — hit “run” on a strategy above.</td></tr>
+              <tr><td colSpan={9} className="px-3 py-4 text-center" style={{ color: "var(--muted)" }}>
+                No runs cached for {win} yet.</td></tr>
             )}
             {board.map((r, i) => (
               <tr key={r.id} onClick={() => pickRow(r)} className="cursor-pointer"
                 style={{ borderTop: "1px solid var(--line)", background: selected?.id === r.id ? "var(--panel-2)" : undefined }}>
                 <td className="px-3 py-1.5 mono" style={{ color: "var(--muted)" }}>{i + 1}</td>
-                <td className="px-3 py-1.5">{r.strategy}{active === r.strategy && <span style={{ color: "var(--green)" }}> ★</span>}</td>
-                <td className="px-3 py-1.5 mono">{r.window}</td>
+                <td className="px-2 py-1.5">
+                  <button title="set active" onClick={(e) => makeActive(e, r.strategy)} className="text-[13px]"
+                    style={{ color: active === r.strategy ? "var(--green)" : "var(--muted)" }}>★</button>
+                </td>
+                <td className="px-3 py-1.5">{r.strategy}</td>
                 <td className="px-3 py-1.5 mono" style={{ color: rColor(r.metrics.expectancy_r) }}>{(r.metrics.expectancy_r ?? 0).toFixed(2)}</td>
                 <td className="px-3 py-1.5 mono">{(r.metrics.profit_factor ?? 0).toFixed(2)}</td>
                 <td className="px-3 py-1.5 mono">{(r.metrics.win_rate ?? 0).toFixed(0)}</td>
                 <td className="px-3 py-1.5 mono">{(r.metrics.max_drawdown_pct ?? 0).toFixed(1)}</td>
+                <td className="px-3 py-1.5 mono" style={{ color: rColor(r.metrics.return_pct) }}>{(r.metrics.return_pct ?? 0).toFixed(0)}%</td>
                 <td className="px-3 py-1.5 mono">{money(r.final_equity)}</td>
               </tr>
             ))}

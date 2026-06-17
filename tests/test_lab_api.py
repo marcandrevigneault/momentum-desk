@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 os.environ["LAB_DB"] = ":memory:"   # set before the app's lifespan opens the store
+os.environ["LAB_SEED"] = "off"      # skip the heavy committed seed in tests
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -16,7 +17,7 @@ def test_lab_flow():
         # seeded canonical strategies
         listing = c.get("/api/lab/strategies").json()
         names = [s["name"] for s in listing["strategies"]]
-        assert "Intraday momentum" in names and any("3-leg" in n for n in names)
+        assert "Intraday momentum" in names and any("Fade" in n for n in names)
 
         # run one → persisted, result returned
         run = c.post("/api/lab/run", json={"name": "Intraday momentum", "window": "1y"}).json()
