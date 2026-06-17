@@ -301,6 +301,29 @@ async def lab_gauntlet(strategy: str) -> dict:
     return {"available": bool(g), "gauntlet": g} if g else {"available": False, "reason": "not computed yet"}
 
 
+@app.get("/api/lab/dryrun")
+async def lab_dryrun(strategy: str) -> dict:
+    """Live dry-run preview for a strategy: what the reconciled engine would have
+    traded on the most recent day (sourced from its run — proven identical to the
+    live engine; nothing transmitted). Single-leg only."""
+    from .dryrun import supported
+    strat = app.state.lab.get_strategy(strategy)
+    if strat is None:
+        return {"available": False, "reason": "unknown strategy"}
+    if not supported(strat):
+        return {"available": False, "reason": "dry-run is single-leg only (this strategy is multi-leg)"}
+    row = next((r for r in app.state.lab.leaderboard(window="1y") if r["strategy"] == strategy), None)
+    if row is None:
+        return {"available": False, "reason": "no run yet"}
+    trades = app.state.lab.get_run(row["id"])["result"].get("trades", [])
+    if not trades:
+        return {"available": True, "day": None, "orders": [], "day_pnl": 0.0}
+    last_day = max(t["day"] for t in trades)
+    orders = [t for t in trades if t["day"] == last_day]
+    return {"available": True, "strategy": strategy, "day": last_day, "orders": orders,
+            "day_pnl": round(sum(t["pnl"] for t in orders), 2)}
+
+
 @app.get("/api/lab/active")
 async def lab_get_active() -> dict:
     return {"active": app.state.lab.get_active()}

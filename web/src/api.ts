@@ -195,6 +195,10 @@ export async function getLabGauntlet(strategy: string): Promise<{ available: boo
   const r = await fetch(`/api/lab/gauntlet?strategy=${encodeURIComponent(strategy)}`);
   return r.json();
 }
+export async function getLabDryrun(strategy: string): Promise<{ available: boolean; reason?: string; day?: string; orders?: any[]; day_pnl?: number }> {
+  const r = await fetch(`/api/lab/dryrun?strategy=${encodeURIComponent(strategy)}`);
+  return r.json();
+}
 export async function renameLabStrategy(name: string, newName: string): Promise<{ ok: boolean; error?: string }> {
   const r = await fetch(`/api/lab/strategies/${encodeURIComponent(name)}/rename`, {
     method: "POST", headers: { "Content-Type": "application/json" },
