@@ -20,13 +20,12 @@ from pathlib import Path
 
 from momentum_desk.edge.lab import CANONICAL, best_data_source, run_only
 
-_TRADE_CAP = 800        # most-recent trades kept per run
 _CURVE_PTS = 400        # equity-curve points kept (downsampled)
 
 
 def _slim(d: dict) -> dict:
-    if len(d.get("trades", [])) > _TRADE_CAP:
-        d["trades"] = d["trades"][-_TRADE_CAP:]
+    # keep the FULL trade log (so month→trades drill-down works for every month);
+    # only the equity curve is downsampled for size.
     curve = d.get("equity_curve", [])
     if len(curve) > _CURVE_PTS:
         step = len(curve) / _CURVE_PTS
