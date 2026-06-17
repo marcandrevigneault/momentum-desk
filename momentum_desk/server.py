@@ -24,13 +24,37 @@ from fastapi.staticfiles import StaticFiles
 
 from .backtest.data import MinuteBar
 from .config import AppConfig, build_adapter, load_config
+from .dryrun import supported
 from .live_feed import MinuteBarAggregator
+from .live_trader import LiveEngine
 from .models import Signal, Snapshot
 from .paper import PaperDesk
 from .risk import RiskEngine
 from .scanner import ScanConfig, ScannerEngine
 
 _HISTORY_CAP = 240   # intraday points kept per symbol for the chart
+_SESSION_OPEN_TOD = 240    # 04:00 ET — premarket; engine watches from here
+_SESSION_CLOSE_TOD = 1200  # 20:00 ET — after-hours close; stop polling beyond
+
+
+def _et_now():
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+    return _dt.datetime.now(ZoneInfo("America/New_York"))
+
+
+def _et_day() -> str:
+    return _et_now().strftime("%Y-%m-%d")
+
+
+def _in_session_window() -> bool:
+    """Weekday and within premarket→after-hours — when it's worth polling the
+    feed. Bounds cost: no point hammering the data API overnight/weekends."""
+    now = _et_now()
+    if now.weekday() >= 5:                       # Sat/Sun
+        return False
+    tod = now.hour * 60 + now.minute
+    return _SESSION_OPEN_TOD <= tod <= _SESSION_CLOSE_TOD
 
 
 class ScannerService:
@@ -48,15 +72,38 @@ class ScannerService:
         # retained per symbol so /api/live/bars can show the live feed is sound.
         self.aggregator = MinuteBarAggregator()
         self.live_bars: dict[str, list[MinuteBar]] = {}
+        # the reconciled engine run on the live tape — intended orders only,
+        # NOTHING transmitted. None until a single-leg strategy is attached.
+        self._strategy = None
+        self.live: LiveEngine | None = None
+        self.latest: dict | None = None     # last scan result, for headless WS reads
+
+    def set_strategy(self, strategy) -> None:
+        """Attach (or detach) the strategy the live engine evaluates on the tape."""
+        self._strategy = strategy
+        self._rebuild_live(_et_day())
+
+    def _rebuild_live(self, day: str) -> None:
+        if self._strategy is None or not supported(self._strategy):
+            self.live = None
+            return
+        self.live = LiveEngine(self._strategy, account_equity=self.cfg.risk.account_equity,
+                               day=day)
 
     def _aggregate(self, snaps: list[Snapshot]) -> None:
+        if self.live is not None and self.live.day != (today := _et_day()):
+            self._rebuild_live(today)        # fresh session → fresh trackers
         for s in snaps:
+            if self.live is not None:
+                self.live.observe(s)         # register gate-passing candidates
             bar = self.aggregator.ingest(s)
             if bar is not None:
                 buf = self.live_bars.setdefault(s.symbol, [])
                 buf.append(bar)
                 if len(buf) > _HISTORY_CAP:
                     del buf[: len(buf) - _HISTORY_CAP]
+                if self.live is not None:
+                    self.live.on_bar(s.symbol, bar)   # intended entries/exits
 
     def _record_history(self, snaps: list[Snapshot]) -> None:
         for s in snaps:
@@ -78,7 +125,7 @@ class ScannerService:
         self.desk.update(self.last_price)   # trail stops + auto-exit on stop/target
         signals = self.scanner.scan(snaps)
         prices = self.last_price
-        return {
+        self.latest = {
             "ts": max((s.ts for s in snaps), default=0.0),
             "feed": self.adapter.name,
             "mode": self.cfg.mode,
@@ -87,6 +134,7 @@ class ScannerService:
             "account": self.desk.account_view(prices),
             "positions": self.desk.positions_view(prices),
         }
+        return self.latest
 
     def _signal_dict(self, s: Signal, snap) -> dict:
         d = {
@@ -156,6 +204,26 @@ class BasicAuthMiddleware:
                 and secrets.compare_digest(pw, self._password))
 
 
+async def _engine_loop(svc: ScannerService, interval_s: float) -> None:
+    """Headless ticker: poll the feed and drive the aggregator + live engine on a
+    schedule, independent of any dashboard WebSocket. Only polls inside the
+    session window. Swallows its own errors so one bad tick never kills the loop.
+    Transmits NOTHING — it only computes intended orders."""
+    print(f"[engine] live-intent loop started (interval={interval_s}s, dry-run)")
+    while True:
+        try:
+            if _in_session_window():
+                await svc.scan_once()
+                await asyncio.sleep(interval_s)
+            else:
+                await asyncio.sleep(60)      # idle off-hours, cheap
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:               # noqa: BLE001
+            print(f"[engine] tick error: {e}")
+            await asyncio.sleep(interval_s)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.service = ScannerService(load_config())
@@ -170,6 +238,23 @@ async def lifespan(app: FastAPI):
     from .edge.store import LabStore
     app.state.lab = LabStore(os.environ.get("LAB_DB", "data/lab.db"))
     _seed_lab(app.state.lab)
+
+    # Live engine — run the active Lab strategy on the live tape (dry-run; nothing
+    # transmitted). Opt-in via LIVE_ENGINE_ENABLED so the data feed isn't polled
+    # (and billed) unless wanted. The headless loop makes it autonomous — no
+    # dashboard tab required.
+    app.state.engine_task = None
+    if os.environ.get("LIVE_ENGINE_ENABLED", "").strip().lower() in ("1", "true", "yes"):
+        svc = app.state.service
+        active = app.state.lab.get_active()
+        strat = app.state.lab.get_strategy(active) if active else None
+        if strat is not None and supported(strat):
+            svc.set_strategy(strat)
+            interval = float(os.environ.get("LIVE_ENGINE_INTERVAL_S", "15"))
+            app.state.engine_task = asyncio.create_task(_engine_loop(svc, interval))
+            print(f"[server] live engine attached: {active} (dry-run, interval={interval}s)")
+        else:
+            print(f"[server] live engine NOT started: active={active!r} not single-leg")
 
     # IBKR Client Portal keepalive — only when enabled (set IBKR_ENABLED=true in
     # the container, where the gateway + ibeam run). The tickle loop swallows its
@@ -188,6 +273,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    engine_task = getattr(app.state, "engine_task", None)
+    if engine_task is not None:
+        engine_task.cancel()
     task = getattr(app.state, "ibkr_task", None)
     if task is not None:
         task.cancel()
@@ -455,6 +543,24 @@ async def live_bars_index() -> dict:
     svc: ScannerService = app.state.service
     return {"feed": svc.adapter.name,
             "symbols": {sym: len(bars) for sym, bars in sorted(svc.live_bars.items())}}
+
+
+@app.get("/api/live/intent")
+async def live_intent() -> dict:
+    """What the reconciled engine WOULD trade on the live tape for the active
+    strategy — watched candidates, intended entries/exits, day P&L. Proven
+    identical to the dry-run/backtest. NOTHING is transmitted; no order is placed.
+    Enable with LIVE_ENGINE_ENABLED + a single-leg active strategy."""
+    svc: ScannerService = app.state.service
+    if svc.live is None:
+        active = app.state.lab.get_active()
+        return {"available": False, "armed": False,
+                "reason": f"live engine not attached (active={active!r}; "
+                          "set LIVE_ENGINE_ENABLED and pick a single-leg strategy)"}
+    snap = svc.live.snapshot()
+    snap.update(available=True, armed=False, feed=svc.adapter.name,
+                in_session=_in_session_window())
+    return snap
 
 
 @app.post("/api/backtest")
@@ -970,9 +1076,13 @@ async def trade_close(symbol: str) -> dict:
 async def ws_signals(ws: WebSocket) -> None:
     await ws.accept()
     svc: ScannerService = app.state.service
+    headless = getattr(app.state, "engine_task", None) is not None
     try:
         while True:
-            await ws.send_json(await svc.scan_once())
+            # when the headless engine loop owns polling, stream its cached tick
+            # rather than double-polling (and double-billing) the feed.
+            data = svc.latest if (headless and svc.latest is not None) else await svc.scan_once()
+            await ws.send_json(data)
             await asyncio.sleep(svc.cfg.scan_interval_s)
     except WebSocketDisconnect:
         pass
