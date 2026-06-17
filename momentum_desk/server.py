@@ -77,6 +77,11 @@ class ScannerService:
         self._strategy = None
         self.live: LiveEngine | None = None
         self.latest: dict | None = None     # last scan result, for headless WS reads
+        # live order transmission (C4) — OFF unless explicitly armed in lifespan.
+        self.armed = False                  # master switch: send real paper orders
+        self.entries_halted = False         # daily-loss breaker (exits still allowed)
+        self.pending_orders: list[dict] = []   # intended events awaiting transmission
+        self.transmitted: list[dict] = []      # log of send/skip/halt outcomes
 
     def set_strategy(self, strategy) -> None:
         """Attach (or detach) the strategy the live engine evaluates on the tape."""
@@ -103,7 +108,9 @@ class ScannerService:
                 if len(buf) > _HISTORY_CAP:
                     del buf[: len(buf) - _HISTORY_CAP]
                 if self.live is not None:
-                    self.live.on_bar(s.symbol, bar)   # intended entries/exits
+                    ev = self.live.on_bar(s.symbol, bar)   # intended entries/exits
+                    if self.armed and ev is not None and ev.get("kind") in ("entry", "exit"):
+                        self.pending_orders.append(ev)     # drained by the engine loop
 
     def _record_history(self, snaps: list[Snapshot]) -> None:
         for s in snaps:
@@ -204,6 +211,66 @@ class BasicAuthMiddleware:
                 and secrets.compare_digest(pw, self._password))
 
 
+async def _transmit_pending(svc: ScannerService) -> None:
+    """Drain the intended-order queue to the IBKR paper account. The SINGLE place
+    a real order is sent. Paper-only hard stop; entries face the daily-loss
+    breaker + trading window; exits are always allowed to close. Never raises."""
+    if not svc.armed or not svc.pending_orders:
+        svc.pending_orders.clear()
+        return
+    from .live_transmit import decide, transmit_order
+    client = getattr(app.state, "ibkr_client", None)
+    if client is None:
+        svc.pending_orders.clear()
+        return
+    try:
+        account_id = client.account_id or await client.resolve_account_id()
+    except Exception as e:  # noqa: BLE001 — gateway not authenticated yet
+        print(f"[trade] no account (gateway not ready?): {e}; holding queue")
+        return
+    paper = account_id.upper().startswith("DU")
+    try:
+        held = {p.symbol.upper() for p in await client.get_positions(account_id)}
+    except Exception:  # noqa: BLE001
+        held = set()
+    in_window = _in_session_window()
+
+    queue, svc.pending_orders = svc.pending_orders, []
+    for ev in queue:
+        d = decide(ev, armed=svc.armed, entries_halted=svc.entries_halted,
+                   paper=paper, in_window=in_window, held=held)
+        rec = {**ev, "decision": d.action, "decision_reason": d.reason}
+        if d.action == "halt":
+            svc.armed = False                # paper assertion failed — kill the switch
+            print(f"[trade] HALT: {d.reason}. disarmed.")
+            svc.transmitted.append(rec)
+            break
+        if d.action == "skip":
+            svc.transmitted.append(rec)
+            continue
+        try:
+            reply = await transmit_order(client, account_id, ev["symbol"], d.side, ev["shares"])
+            rec["transmitted"] = True
+            rec["broker_reply"] = reply
+            if d.side == "BUY":
+                held.add(ev["symbol"].upper())
+            print(f"[trade] SENT {d.side} {ev['shares']} {ev['symbol']} -> {reply}")
+        except Exception as e:  # noqa: BLE001
+            rec["transmitted"] = False
+            rec["error"] = str(e)
+            print(f"[trade] send failed {ev['symbol']}: {e}")
+        svc.transmitted.append(rec)
+
+    # daily-loss breaker (proxy on the engine's intended day P&L): halt new entries
+    if svc.live is not None and not svc.entries_halted:
+        day_pnl = sum(o.get("pnl", 0.0) for o in svc.live.closed)
+        limit = -abs(svc.cfg.risk.max_daily_loss_pct / 100.0 * svc.cfg.risk.account_equity)
+        if day_pnl <= limit:
+            svc.entries_halted = True
+            print(f"[trade] daily-loss breaker tripped: {day_pnl:.0f} <= {limit:.0f}; "
+                  "halting new entries (exits still allowed)")
+
+
 async def _engine_loop(svc: ScannerService, interval_s: float) -> None:
     """Headless ticker: poll the feed and drive the aggregator + live engine on a
     schedule, independent of any dashboard WebSocket. Only polls inside the
@@ -214,6 +281,8 @@ async def _engine_loop(svc: ScannerService, interval_s: float) -> None:
         try:
             if _in_session_window():
                 await svc.scan_once()
+                if svc.armed:
+                    await _transmit_pending(svc)   # send any queued paper orders
                 await asyncio.sleep(interval_s)
             else:
                 await asyncio.sleep(60)      # idle off-hours, cheap
@@ -252,7 +321,16 @@ async def lifespan(app: FastAPI):
             svc.set_strategy(strat)
             interval = float(os.environ.get("LIVE_ENGINE_INTERVAL_S", "15"))
             app.state.engine_task = asyncio.create_task(_engine_loop(svc, interval))
-            print(f"[server] live engine attached: {active} (dry-run, interval={interval}s)")
+            # arming real paper orders requires ALL of: engine on, IBKR gateway on,
+            # and the explicit LIVE_TRADING=armed flag. Paper-only is re-checked at
+            # transmit time (DU account assertion), so this is defence-in-depth.
+            ibkr_on = os.environ.get("IBKR_ENABLED", "").strip().lower() in ("1", "true", "yes")
+            armed = os.environ.get("LIVE_TRADING", "").strip().lower() == "armed"
+            svc.armed = bool(armed and ibkr_on)
+            mode = "ARMED (real paper orders)" if svc.armed else "dry-run"
+            if armed and not ibkr_on:
+                print("[server] LIVE_TRADING=armed ignored: IBKR_ENABLED not set")
+            print(f"[server] live engine attached: {active} ({mode}, interval={interval}s)")
         else:
             print(f"[server] live engine NOT started: active={active!r} not single-leg")
 
@@ -583,8 +661,9 @@ async def live_intent() -> dict:
                 "reason": f"live engine not attached (active={active!r}; "
                           "set LIVE_ENGINE_ENABLED and pick a single-leg strategy)"}
     snap = svc.live.snapshot()
-    snap.update(available=True, armed=False, feed=svc.adapter.name,
-                in_session=_in_session_window())
+    snap.update(available=True, armed=svc.armed, entries_halted=svc.entries_halted,
+                feed=svc.adapter.name, in_session=_in_session_window(),
+                transmitted=svc.transmitted[-50:], transmitted_count=len(svc.transmitted))
     return snap
 
 
