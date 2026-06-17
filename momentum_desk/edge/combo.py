@@ -20,6 +20,7 @@ from ..models import Snapshot
 from ..risk import RiskConfig, RiskEngine
 from .exits import simulate_exit_detail, simulate_fade_detail
 from .portfolio import SimTrade, _book_due, _monthly, _policy
+from .result import AccountRun
 from .screen import ScreenConfig, _find_event, _passes_gate
 
 
@@ -80,21 +81,12 @@ class ComboConfig:
 
 
 @dataclass
-class ComboResult:
-    legs: list[str]
-    days: int
-    starting_equity: float
-    final_equity: float
-    n_signals: int
-    n_taken: int
-    n_skipped_capacity: int
-    metrics: dict = field(default_factory=dict)
+class ComboResult(AccountRun):
+    # account-level fields come from AccountRun; a combo adds which legs ran and
+    # their per-leg attribution.
+    legs: list[str] = field(default_factory=list)
     leg_pnl: dict = field(default_factory=dict)      # per-leg attribution ($)
     leg_trades: dict = field(default_factory=dict)   # per-leg trade count
-    equity_curve: list[float] = field(default_factory=list)
-    daily_equity: list[dict] = field(default_factory=list)
-    monthly: list[dict] = field(default_factory=list)
-    trades: list[dict] = field(default_factory=list)
 
 
 def _leg_day_pots(leg: ComboLeg, day: str) -> list[tuple]:

@@ -16,13 +16,14 @@ that matters: what the strategy would have done to a $25k account.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 
 from ..backtest.data import Trade
 from ..backtest.metrics import compute_metrics
 from ..models import Snapshot
 from ..risk import RiskConfig, RiskEngine
 from .exits import POLICIES, ExitPolicy, simulate_exit_detail
+from .result import AccountRun
 from .screen import ScreenConfig, _find_event, _passes_gate
 
 
@@ -62,20 +63,12 @@ class PeriodRow:
 
 
 @dataclass
-class SimResult:
-    session: str
-    exit_policy: str
-    days: int
-    starting_equity: float
-    final_equity: float
-    n_signals: int          # how many entries triggered
-    n_taken: int            # how many we had capacity/capital to take
-    n_skipped_capacity: int
-    metrics: dict = field(default_factory=dict)
-    equity_curve: list[float] = field(default_factory=list)
-    daily_equity: list[dict] = field(default_factory=list)
-    monthly: list[dict] = field(default_factory=list)
-    trades: list[dict] = field(default_factory=list)
+class SimResult(AccountRun):
+    # account-level fields (days, equity, capacity counts, metrics, curve,
+    # rollups, trades) come from AccountRun; a single-strategy sim adds which
+    # session + exit policy produced it.
+    session: str = ""
+    exit_policy: str = ""
 
 
 def _policy(name: str) -> ExitPolicy:
