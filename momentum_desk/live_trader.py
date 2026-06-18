@@ -95,11 +95,37 @@ class LiveEngine:
             "strategy": self.strategy.name, "day": self.day, "equity": self.equity,
             "session": self.cfg.session, "exit_policy": self.strategy.exit_policy,
             "watching": sorted(self.trackers),
+            "candidates": self.candidate_views(),
             "holding": [dict(o) for o in self.open.values()],
             "closed": list(self.closed),
             "day_pnl": round(sum(o.get("pnl", 0.0) for o in self.closed), 2),
             "intent": self.intent[-100:],
         }
+
+    def candidate_views(self) -> list[dict]:
+        """Per-symbol setup detail for the UI: where each watched name is in its
+        life-cycle (watch → holding → done), its gap, the live breakout level
+        (high-of-session so far), and the entry/stop/exit once it triggers."""
+        out: list[dict] = []
+        for sym, tr in self.trackers.items():
+            c = self.cands[sym]
+            bars = tr.bars
+            last = bars[-1] if bars else None
+            order = self.open.get(sym) or next(
+                (o for o in reversed(self.closed) if o["symbol"] == sym), None) or {}
+            out.append({
+                "symbol": sym, "state": tr.state, "gap_pct": round(c.gap_pct, 1),
+                "prev_close": c.prev_close, "day_open": c.day_open,
+                "bars": len(bars),
+                "last": round(last.c, 4) if last else None,
+                "last_tod": last.tod if last else None,
+                "trigger": round(max((b.h for b in bars), default=0.0), 4) or None,
+                "entry": order.get("entry"), "stop": order.get("stop"),
+                "exit": order.get("exit"), "reason": order.get("reason"),
+                "shares": order.get("shares"), "pnl": order.get("pnl"),
+            })
+        out.sort(key=lambda r: (r["state"] != "holding", -(r["gap_pct"] or 0)))
+        return out
 
     # ---- internals --------------------------------------------------------
 

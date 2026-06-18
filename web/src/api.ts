@@ -199,10 +199,20 @@ export async function getLabDryrun(strategy: string): Promise<{ available: boole
   const r = await fetch(`/api/lab/dryrun?strategy=${encodeURIComponent(strategy)}`);
   return r.json();
 }
+export interface LiveCandidate {
+  symbol: string; state: string; gap_pct: number;
+  prev_close: number; day_open: number; bars: number;
+  last: number | null; last_tod: number | null; trigger: number | null;
+  entry?: number | null; stop?: number | null; exit?: number | null;
+  reason?: string | null; shares?: number | null; pnl?: number | null;
+}
 export interface LiveIntent {
-  available: boolean; armed: boolean; reason?: string;
+  available: boolean; armed: boolean; entries_halted?: boolean; reason?: string;
   strategy?: string; session?: string; day?: string; in_session?: boolean;
-  watching?: string[]; holding?: any[]; closed?: any[]; day_pnl?: number; intent?: any[];
+  exit_policy?: string; equity?: number; feed?: string;
+  watching?: string[]; candidates?: LiveCandidate[]; holding?: any[];
+  closed?: any[]; day_pnl?: number; intent?: any[];
+  transmitted?: any[]; transmitted_count?: number;
 }
 export async function getLiveIntent(): Promise<LiveIntent> {
   const r = await fetch("/api/live/intent");

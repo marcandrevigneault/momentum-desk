@@ -1,16 +1,18 @@
 import { useState } from "react";
 import LabPage from "./pages/LabPage";
 import CockpitPage from "./pages/CockpitPage";
+import EnginePage from "./pages/EnginePage";
 
 // Two top-level surfaces. The Strategy Lab folds in the analysis tools
 // (Backtester/Edge/Exit-lab/Gauntlet/Rules/Tuner) as its own tabs and subsumes
 // the old Analyser/Simulation/Combo pages into its leaderboard + results. Cockpit
 // is the live execution surface and stays separate.
-type Page = "lab" | "cockpit";
+type Page = "lab" | "cockpit" | "engine";
 
 const NAV: { id: Page; label: string; icon: string; hint: string }[] = [
   { id: "lab", label: "Strategy Lab", icon: "🧪", hint: "define · run · rank · activate — every strategy + the analysis tools" },
   { id: "cockpit", label: "Cockpit", icon: "▦", hint: "live scanner, charts, paper trading" },
+  { id: "engine", label: "Engine", icon: "🤖", hint: "autonomous live engine — watched candidates, setups & intended orders" },
 ];
 
 export default function App() {
@@ -73,7 +75,7 @@ export default function App() {
 
       {/* active page */}
       <div className="grow min-h-0">
-        {page === "lab" ? <LabPage /> : <CockpitPage />}
+        {page === "lab" ? <LabPage /> : page === "engine" ? <EnginePage /> : <CockpitPage />}
       </div>
     </div>
   );
