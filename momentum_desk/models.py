@@ -25,7 +25,9 @@ class Snapshot:
     halted: bool = False
     has_news: bool = False
     news_headline: str = ""
-    ts: float = 0.0             # epoch seconds of this snapshot
+    ts: float = 0.0             # epoch seconds we received this snapshot (receive clock)
+    data_ts: float = 0.0        # epoch seconds of the underlying market print (0 = unknown);
+                                # ts - data_ts is the true feed delay
 
     # ---- derived metrics (cheap, computed on demand) ----
     @property

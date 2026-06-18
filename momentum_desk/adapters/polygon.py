@@ -29,6 +29,19 @@ from ..scanner import ScanConfig
 _BASE = "https://api.polygon.io"
 
 
+def _data_ts(t: dict) -> float:
+    """Epoch seconds of a snapshot ticker's most recent print. Polygon stamps
+    lastTrade.t / updated in nanoseconds and min.t in milliseconds; prefer the
+    last trade, fall back to the latest minute bar. 0.0 when unknown."""
+    lt = (t.get("lastTrade") or {}).get("t") or t.get("updated")
+    if lt:
+        return float(lt) / 1e9          # nanoseconds → seconds
+    mt = (t.get("min") or {}).get("t")
+    if mt:
+        return float(mt) / 1e3          # milliseconds → seconds
+    return 0.0
+
+
 @dataclass
 class _Cache:
     shares_outstanding: dict[str, float]
@@ -113,6 +126,7 @@ class PolygonAdapter:
                     has_news=bool(headline),
                     news_headline=headline,
                     ts=now,
+                    data_ts=_data_ts(t),   # real print time → reveals true feed delay
                 )
             )
         return out
