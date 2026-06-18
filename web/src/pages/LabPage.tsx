@@ -191,6 +191,10 @@ function LeaderboardTab() {
               title="rename this strategy" />
             <span className="mono text-[11px]" style={{ color: "var(--muted)" }}>{selected.window} · {selected.data_source}</span>
             {active === selected.strategy && <span className="mono text-[10px] px-2 py-0.5 rounded" style={{ color: "var(--green)", border: "1px solid var(--green)" }}>★ ACTIVE</span>}
+            <button onClick={() => { setSelected(null); setGaunt(null); setDry(null); setMonthFilter(null); }}
+              className="ml-auto mono text-[11px] px-2 py-1 rounded"
+              style={{ background: "var(--panel-2)", border: "1px solid var(--line)", color: "var(--muted)" }}
+              title="back to the strategy list">✕ close</button>
           </div>
 
           {/* live dry-run preview — what the reconciled engine would trade */}

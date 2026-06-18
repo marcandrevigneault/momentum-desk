@@ -1,7 +1,35 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getLiveIntent, type LiveIntent } from "./api";
 import LabPage from "./pages/LabPage";
 import CockpitPage from "./pages/CockpitPage";
 import EnginePage from "./pages/EnginePage";
+
+const money = (v: number) => (v ?? 0).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0, signDisplay: "always" });
+
+/** Always-visible running P&L for today's live engine, on every page. */
+function TodayPnl() {
+  const [li, setLi] = useState<LiveIntent | null>(null);
+  useEffect(() => {
+    let on = true;
+    const tick = () => getLiveIntent().then((r) => on && setLi(r)).catch(() => {});
+    tick();
+    const id = setInterval(tick, 8000);
+    return () => { on = false; clearInterval(id); };
+  }, []);
+  if (!li?.available) return null;
+  const pnl = li.day_pnl ?? 0;
+  const c = pnl >= 0 ? "var(--green)" : "var(--red)";
+  const nClosed = li.closed?.length ?? 0;
+  const nHold = li.holding?.length ?? 0;
+  return (
+    <span className="ml-auto mono text-[12px] flex items-center gap-3" title={`Live engine today — ${li.armed ? "ARMED" : "dry-run"}. ${nClosed} closed, ${nHold} open.`}>
+      <span style={{ color: "var(--muted)" }}>today P&L</span>
+      <b style={{ color: c }}>{money(pnl)}</b>
+      <span style={{ color: "var(--muted)" }}>· {nClosed} closed · {nHold} open</span>
+      {li.armed && <span className="text-[10px] px-2 py-0.5 rounded" style={{ color: "var(--red)", border: "1px solid var(--red)" }}>ARMED</span>}
+    </span>
+  );
+}
 
 // Two top-level surfaces. The Strategy Lab folds in the analysis tools
 // (Backtester/Edge/Exit-lab/Gauntlet/Rules/Tuner) as its own tabs and subsumes
@@ -35,6 +63,7 @@ export default function App() {
           Momentum&nbsp;Desk
           <span className="mono text-[11px] font-medium ml-2" style={{ color: "var(--muted)" }}>{active.label.toLowerCase()}</span>
         </h1>
+        <TodayPnl />
       </header>
 
       {/* slide-in nav drawer + backdrop */}
