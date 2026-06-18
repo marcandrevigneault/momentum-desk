@@ -28,6 +28,15 @@ def test_tod_of_is_et_minute_of_day():
     assert tod_of(_ts(11, 0)) == 660
 
 
+def test_polygon_data_ts_reveals_real_print_time():
+    """The feed-freshness fix: derive the true market-print time so the UI can
+    measure delay instead of asserting it."""
+    from momentum_desk.adapters.polygon import _data_ts
+    assert abs(_data_ts({"lastTrade": {"t": 1781740796648281544}}) - 1781740796.648) < 1
+    assert _data_ts({"min": {"t": 1781740740000}}) == 1781740740.0   # ms fallback
+    assert _data_ts({}) == 0.0                                       # unknown
+
+
 def test_no_bar_until_minute_closes():
     agg = MinuteBarAggregator()
     assert agg.ingest(_snap("AAA", 5.0, 100, 5.0, _ts(9, 30, 1))) is None

@@ -4,7 +4,7 @@ import DetailPanel from "../components/DetailPanel";
 import Positions from "../components/Positions";
 import ScannerTable from "../components/ScannerTable";
 import Trades from "../components/Trades";
-import type { Trade } from "../types";
+import type { ScanMessage, Trade } from "../types";
 import { useScanner, type ConnState } from "../useScanner";
 
 function ConnBadge({ state, feed }: { state: ConnState; feed?: string }) {
@@ -22,6 +22,35 @@ function ConnBadge({ state, feed }: { state: ConnState; feed?: string }) {
 }
 
 const money = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+const fmtAge = (s: number) => (s < 90 ? `${Math.round(s)}s` : `${Math.round(s / 60)}m`);
+
+/** Measured feed freshness — the real data age, not a hardcoded assumption. Only
+ *  flags "delayed" during the regular session, when a live feed should be fresh. */
+function FeedFreshness({ data }: { data: ScanMessage }) {
+  const phase = data.market_phase;
+  const age = data.feed_age_s;
+  if (phase && phase !== "regular") {
+    const label = phase === "extended" ? "extended hours" : "market closed";
+    return (
+      <span className="badge" style={{ color: "var(--muted)", borderColor: "var(--line)" }}
+            title={`US market ${label}. ${age != null ? `Last print ${fmtAge(age)} ago.` : ""} Feed delay is only measurable during 09:30–16:00 ET.`}>
+        🌙 {label}
+      </span>
+    );
+  }
+  if (age == null) return null;                        // regular hours but no timestamp yet
+  const fresh = age <= 120;                            // a real-time feed prints sub-minute
+  const c = fresh ? "var(--green)" : "var(--amber)";
+  return (
+    <span className="badge" style={{ color: c, borderColor: c }}
+          title={fresh
+            ? `Real-time: last market print ${fmtAge(age)} ago.`
+            : `Feed is ~${fmtAge(age)} behind the market — delayed tier. Paper/observe only at this latency.`}>
+      {fresh ? "⚡ real-time" : "⏱ delayed"} · {fmtAge(age)}
+    </span>
+  );
+}
 
 function LiveEngineBadge() {
   const [li, setLi] = useState<LiveIntent | null>(null);
@@ -100,12 +129,7 @@ export default function CockpitPage() {
             {data.mode}
           </span>
         )}
-        {data && data.feed !== "mock" && (
-          <span className="badge" style={{ color: "var(--amber)", borderColor: "var(--amber)" }}
-                title="Massive plan is 15-min delayed — observation / paper only, NOT live-tradeable. Real-time needs the $189 plan.">
-            ⏱ 15-min delayed · observe only
-          </span>
-        )}
+        {data && data.feed !== "mock" && <FeedFreshness data={data} />}
         <LiveEngineBadge />
         <IbkrBadge />
         <div className="ml-auto flex items-center gap-5">

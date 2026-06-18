@@ -49,6 +49,8 @@ export interface Account {
 export interface ScanMessage {
   ts: number;
   feed: string;
+  feed_age_s?: number | null;   // measured data delay in seconds (null if unknown)
+  market_phase?: string;        // "regular" | "extended" | "closed"
   mode: string;
   count: number;
   signals: Signal[];

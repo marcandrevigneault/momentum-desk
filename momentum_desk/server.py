@@ -57,6 +57,22 @@ def _in_session_window() -> bool:
     return _SESSION_OPEN_TOD <= tod <= _SESSION_CLOSE_TOD
 
 
+def _market_phase() -> str:
+    """Coarse US-equity session phase (no holiday calendar): regular | extended |
+    closed. 'regular' is 09:30–16:00 ET on a weekday — the only window where a
+    real-time feed should show sub-minute prints, so the only window where a
+    stale feed actually means 'delayed'."""
+    now = _et_now()
+    if now.weekday() >= 5:
+        return "closed"
+    tod = now.hour * 60 + now.minute
+    if 570 <= tod < 960:                          # 09:30–16:00
+        return "regular"
+    if _SESSION_OPEN_TOD <= tod <= _SESSION_CLOSE_TOD:
+        return "extended"
+    return "closed"
+
+
 class ScannerService:
     """Holds the live pipeline and produces one serializable scan on demand."""
 
@@ -132,9 +148,13 @@ class ScannerService:
         self.desk.update(self.last_price)   # trail stops + auto-exit on stop/target
         signals = self.scanner.scan(snaps)
         prices = self.last_price
+        data_ts = [s.data_ts for s in snaps if s.data_ts > 0]
+        feed_age = round(time.time() - max(data_ts), 1) if data_ts else None
         self.latest = {
             "ts": max((s.ts for s in snaps), default=0.0),
             "feed": self.adapter.name,
+            "feed_age_s": feed_age,          # true data delay (None if feed has no timestamps)
+            "market_phase": _market_phase(),
             "mode": self.cfg.mode,
             "count": len(signals),
             "signals": [self._signal_dict(s, by_symbol.get(s.symbol)) for s in signals],
