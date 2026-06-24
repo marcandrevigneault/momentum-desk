@@ -23,6 +23,7 @@ class OrderType(StrEnum):
     MKT = "MKT"
     LMT = "LMT"
     STP = "STP"
+    TRAIL = "TRAIL"   # trailing stop — the broker ratchets it; we set the %
 
 
 @dataclass
@@ -33,6 +34,7 @@ class Order:
     type: OrderType = OrderType.MKT
     limit_price: float | None = None
     stop_price: float | None = None
+    trailing_percent: float | None = None   # for TRAIL orders
 
 
 @dataclass
@@ -80,13 +82,24 @@ def stop_order(plan: PositionPlan) -> Order:
                  type=OrderType.STP, stop_price=plan.stop)
 
 
-def route_plan(broker, plan: PositionPlan, ref_price: float | None = None) -> list[OrderResult]:
-    """Submit a risk-approved plan: entry, then its protective stop. A rejected
-    plan never reaches the broker. A stop is only sent once the entry is live."""
+def trail_order(plan: PositionPlan, trail_pct: float) -> Order:
+    """A trailing protective stop — the broker ratchets it up behind price. This
+    is the 10% trail the exit-lab found best, managed broker-side so it survives
+    even if our loop dies."""
+    return Order(symbol=plan.symbol, side=OrderSide.SELL, quantity=plan.shares,
+                 type=OrderType.TRAIL, trailing_percent=trail_pct)
+
+
+def route_plan(broker, plan: PositionPlan, ref_price: float | None = None,
+               trail_pct: float | None = None) -> list[OrderResult]:
+    """Submit a risk-approved plan: entry, then its protective stop (a trailing
+    stop if trail_pct is given, else a fixed stop). A rejected plan never reaches
+    the broker; the protective order is only sent once the entry is live."""
     if not plan.ok:
         return [OrderResult(plan.symbol, "rejected", message="; ".join(plan.reasons) or "plan not ok")]
     entry = broker.place_order(entry_order(plan), ref_price=ref_price)
     results = [entry]
     if entry.status in ("filled", "submitted", "dry_run"):
-        results.append(broker.place_order(stop_order(plan), ref_price=plan.stop))
+        protective = trail_order(plan, trail_pct) if trail_pct else stop_order(plan)
+        results.append(broker.place_order(protective, ref_price=plan.stop))
     return results

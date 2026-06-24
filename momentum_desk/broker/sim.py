@@ -11,16 +11,23 @@ from .base import Order, OrderResult, OrderSide, OrderType, Position
 class SimBroker:
     name = "sim"
 
-    def __init__(self) -> None:
+    def __init__(self, starting_equity: float = 25_000.0) -> None:
         self._pos: dict[str, Position] = {}
         self.fills: list[OrderResult] = []
         self.realized_pnl: float = 0.0
+        self.starting_equity = starting_equity
 
     def connect(self) -> None:  # nothing to connect
         pass
 
     def disconnect(self) -> None:
         pass
+
+    def nav(self) -> float:
+        """Account value = starting equity + realized P&L (unrealized isn't
+        tracked in this immediate-fill sim) — enough to drive NAV-based sizing
+        in tests."""
+        return self.starting_equity + self.realized_pnl
 
     def positions(self) -> list[Position]:
         return [p for p in self._pos.values() if p.quantity != 0]
@@ -29,13 +36,18 @@ class SimBroker:
         if order.quantity <= 0:
             return OrderResult(order.symbol, "rejected", message="non-positive quantity")
 
-        # A protective STOP is a resting order — it must NOT execute on submit,
-        # only when price later trips it (not modeled in this immediate-fill
-        # sim). Record it as resting; the position is unchanged.
+        # Protective STOP / TRAIL are resting orders — they must NOT execute on
+        # submit, only when price later trips them (not modeled in this
+        # immediate-fill sim). Record as resting; the position is unchanged.
         if order.type is OrderType.STP:
             if not order.stop_price:
                 return OrderResult(order.symbol, "rejected", message="stop order needs a stop price")
             res = OrderResult(order.symbol, "submitted", message=f"resting stop @ {order.stop_price}")
+            self.fills.append(res)
+            return res
+        if order.type is OrderType.TRAIL:
+            res = OrderResult(order.symbol, "submitted",
+                              message=f"resting {order.trailing_percent}% trailing stop")
             self.fills.append(res)
             return res
 
