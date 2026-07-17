@@ -1,5 +1,5 @@
-"""Strategy Lab orchestration — Strategy object + run dispatcher + SQLite store
-behind the /api/lab surface.
+"""Strategy Lab orchestration — provider factory, seed loader, and the run
+dispatcher the /api/lab routes (in server.py) call into. No routes live here.
 
 Runs use REAL data (Polygon/Massive) whenever a data key is present, else fall
 back to synthetic. Because real runs are slow, the leaderboard is populated from

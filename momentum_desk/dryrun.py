@@ -5,7 +5,7 @@ but transmitting NOTHING. This is the review surface before any live order.
 `strategy_to_engine` maps a Lab Strategy → the engine's ScreenConfig + ExitPolicy.
 `dryrun_day` replays one day's candidates through SymbolTrackers and returns the
 intended orders (entry, stop, sized shares, exit, P&L). Because the engine is
-provably identical to run_simulation (test_live_engine), these intended orders are
+provably identical to run_simulation (test_live_tracker), these intended orders are
 exactly what the strategy backtested — now produced the live way.
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ from .edge.exits import ExitPolicy
 from .edge.portfolio import _policy
 from .edge.screen import ScreenConfig, _passes_gate
 from .edge.strategy import Strategy
-from .live_engine import EntrySignal, ExitSignal, SymbolTracker
+from .live_tracker import EntrySignal, ExitSignal, SymbolTracker
 from .models import Snapshot
 from .risk import RiskConfig, RiskEngine
 

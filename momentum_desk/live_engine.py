@@ -1,117 +1,162 @@
-"""Reconciled live engine — makes the LIVE entry/exit identical to the backtest.
+"""Drive the reconciled engine from the LIVE tape — produce the entries/exits the
+active Lab strategy *would* take right now, transmitting NOTHING.
 
-The Lab/backtest entry is the session breakout (screen._find_event) and the exit
-is the strategy's exit policy (edge.exits.simulate_exit_detail), both evaluated
-point-in-time on a sequence of MinuteBars. This module drives those SAME functions
-incrementally, one bar at a time, so a live stream produces exactly the trades the
-backtester would — the prerequisite for trusting live results against the Lab.
-
-A ``SymbolTracker`` is a per-symbol state machine (watch → holding → done). Feed
-it bars as they close; it emits an EntrySignal when the breakout triggers and an
-ExitSignal when the exit policy fires (or the hold window ends). The portfolio
-caps / sizing / order routing live above this, in the trader loop.
-
-`tests/test_live_engine.py` proves the reconciliation: replaying a day through the
-trackers reproduces run_simulation's trades bar-for-bar.
+This is the streaming twin of ``dryrun.dryrun_day``: instead of replaying a
+historical day, it registers candidates from live Snapshots, feeds each symbol's
+closed MinuteBars through a ``SymbolTracker``, and sizes every entry off the
+account exactly as the backtest does. Because it reuses the same engine and the
+same sizing bridge, the intended orders it logs are precisely what the strategy
+backtested — now computed on the live feed. The trader loop above decides whether
+to ever transmit them (it does not, until explicitly armed).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from .backtest.data import DayCandidate, MinuteBar
+from .dryrun import _close, strategy_to_engine, supported
+from .edge.screen import _passes_gate
+from .edge.strategy import Strategy
+from .live_tracker import EntrySignal, ExitSignal, SymbolTracker
+from .models import Snapshot
+from .risk import RiskConfig, RiskEngine
 
-from .backtest.data import MARKET_OPEN_TOD, DayCandidate, MinuteBar
-from .edge.exits import ExitPolicy, simulate_exit_detail
-from .edge.screen import ScreenConfig, _find_event
-
-
-@dataclass
-class EntrySignal:
-    symbol: str
-    entry: float
-    stop: float
-    entry_tod: int
+_INTENT_CAP = 500
 
 
-@dataclass
-class ExitSignal:
-    symbol: str
-    exit_price: float
-    exit_tod: int
-    reason: str
-    r: float
+def candidate_from_snapshot(snap: Snapshot, day: str) -> DayCandidate:
+    """The pre-open context the engine gates/sizes on, lifted from a live snapshot
+    (day_open/prev_close/avg_volume_20d are stable through the session)."""
+    return DayCandidate(symbol=snap.symbol, day=day, prev_close=snap.prev_close,
+                        day_open=snap.day_open, avg_volume_20d=snap.avg_volume_20d,
+                        float_shares=snap.float_shares, has_news=snap.has_news,
+                        news_headline=snap.news_headline)
 
 
-def _deadline(cfg: ScreenConfig) -> int:
-    """The ET minute-of-day after which no more forward bars count — must match
-    the fwd window _find_event uses for the session."""
-    if cfg.session == "premarket":
-        return MARKET_OPEN_TOD + cfg.max_hold_minutes
-    if cfg.session == "intraday":
-        return cfg.intraday_entry_cutoff_tod + cfg.max_hold_minutes
-    return 10_000  # regular uses a count window; handled by running out of bars
+class LiveEngine:
+    """Per-symbol streaming entry/exit for one strategy, sized off the account.
 
+    Feed it candidates (``observe``) and closed bars (``on_bar``); it accumulates
+    ``closed`` intended orders and a human-facing ``intent`` log. Single-leg only.
+    """
 
-class SymbolTracker:
-    """Per-symbol streaming entry/exit, reusing the backtest's exact functions."""
-
-    def __init__(self, cand: DayCandidate, cfg: ScreenConfig, policy: ExitPolicy,
+    def __init__(self, strategy: Strategy, *, account_equity: float, day: str,
                  slippage_pct: float = 0.3) -> None:
-        self.cand = cand
-        self.cfg = cfg
-        self.policy = policy
+        if not supported(strategy):
+            raise ValueError("LiveEngine supports single-leg strategies only")
+        self.strategy = strategy
+        self.day = day
+        self.equity = account_equity
+        self.cfg, self.policy = strategy_to_engine(strategy)
         self.slip = slippage_pct
-        self.bars: list[MinuteBar] = []
-        self.state = "watch"           # watch | holding | done
-        self.entry_idx = 0
-        self.entry = 0.0
-        self.stop = 0.0
-        self._deadline = _deadline(cfg)
+        self.risk = RiskEngine(RiskConfig(
+            account_equity=account_equity,
+            max_risk_per_trade_pct=strategy.sizing.risk_pct,
+            compound=(strategy.sizing.mode == "compound")))
+        self.trackers: dict[str, SymbolTracker] = {}
+        self.cands: dict[str, DayCandidate] = {}
+        self.open: dict[str, dict] = {}      # symbol -> intended open order
+        self.closed: list[dict] = []         # completed intended orders (== dryrun)
+        self.intent: list[dict] = []         # rolling log: register/entry/exit/reject
 
-    @property
-    def symbol(self) -> str:
-        return self.cand.symbol
+    # ---- inputs -----------------------------------------------------------
 
-    def on_bar(self, bar: MinuteBar) -> EntrySignal | ExitSignal | None:
-        self.bars.append(bar)
-        if self.state == "watch":
-            return self._maybe_enter()
-        if self.state == "holding":
-            return self._maybe_exit(end_of_day=False)
+    def observe(self, snap: Snapshot) -> None:
+        """Register a symbol as a candidate if it passes the gate (idempotent)."""
+        self.register(candidate_from_snapshot(snap, self.day))
+
+    def register(self, cand: DayCandidate) -> None:
+        if cand.symbol in self.trackers or not _passes_gate(cand, self.cfg):
+            return
+        self.cands[cand.symbol] = cand
+        self.trackers[cand.symbol] = SymbolTracker(cand, self.cfg, self.policy, self.slip)
+        self._log("watch", cand.symbol)
+
+    def on_bar(self, symbol: str, bar: MinuteBar) -> dict | None:
+        tr = self.trackers.get(symbol)
+        if tr is None:
+            return None
+        sig = tr.on_bar(bar)
+        if isinstance(sig, EntrySignal):
+            return self._enter(symbol, sig, tr)
+        if isinstance(sig, ExitSignal):
+            return self._exit(symbol, sig)
         return None
 
-    def end_of_day(self) -> ExitSignal | None:
-        """Force-close a still-open position on time (mirrors the backtest closing
-        everything at the end of the session)."""
-        if self.state == "holding":
-            return self._maybe_exit(end_of_day=True)
-        return None
+    def finalize(self) -> None:
+        """Force time-exits on anything still open (session close)."""
+        for symbol in list(self.open):
+            eod = self.trackers[symbol].end_of_day()
+            if eod is not None:
+                self._exit(symbol, eod)
+
+    # ---- views ------------------------------------------------------------
+
+    def snapshot(self) -> dict:
+        return {
+            "strategy": self.strategy.name, "day": self.day, "equity": self.equity,
+            "session": self.cfg.session, "exit_policy": self.strategy.exit_policy,
+            "watching": sorted(self.trackers),
+            "candidates": self.candidate_views(),
+            "holding": [dict(o) for o in self.open.values()],
+            "closed": list(self.closed),
+            "day_pnl": round(sum(o.get("pnl", 0.0) for o in self.closed), 2),
+            "intent": self.intent[-100:],
+        }
+
+    def candidate_views(self) -> list[dict]:
+        """Per-symbol setup detail for the UI: where each watched name is in its
+        life-cycle (watch → holding → done), its gap, the live breakout level
+        (high-of-session so far), and the entry/stop/exit once it triggers."""
+        out: list[dict] = []
+        for sym, tr in self.trackers.items():
+            c = self.cands[sym]
+            bars = tr.bars
+            last = bars[-1] if bars else None
+            order = self.open.get(sym) or next(
+                (o for o in reversed(self.closed) if o["symbol"] == sym), None) or {}
+            out.append({
+                "symbol": sym, "state": tr.state, "gap_pct": round(c.gap_pct, 1),
+                "prev_close": c.prev_close, "day_open": c.day_open,
+                "bars": len(bars),
+                "last": round(last.c, 4) if last else None,
+                "last_tod": last.tod if last else None,
+                "trigger": round(max((b.h for b in bars), default=0.0), 4) or None,
+                "entry": order.get("entry"), "stop": order.get("stop"),
+                "exit": order.get("exit"), "reason": order.get("reason"),
+                "shares": order.get("shares"), "pnl": order.get("pnl"),
+            })
+        out.sort(key=lambda r: (r["state"] != "holding", -(r["gap_pct"] or 0)))
+        return out
 
     # ---- internals --------------------------------------------------------
 
-    def _maybe_enter(self) -> EntrySignal | None:
-        ev = _find_event(self.bars, self.cfg)
-        if ev is None:
-            return None
-        entry_idx, entry, stop, _fwd = ev
-        if entry - stop <= 0:
-            self.state = "done"        # void stop — never a trade (as in run_simulation)
-            return None
-        self.entry_idx, self.entry, self.stop = entry_idx, entry, stop
-        self.state = "holding"
-        return EntrySignal(self.symbol, entry, stop, self.bars[entry_idx].tod)
+    def _enter(self, symbol: str, sig: EntrySignal, tr: SymbolTracker) -> dict:
+        cand = self.cands[symbol]
+        eb = tr.bars[tr.entry_idx]
+        snap = Snapshot(symbol=symbol, last=sig.entry, prev_close=cand.prev_close,
+                        day_open=cand.day_open, vwap=eb.vwap, cum_volume=eb.cum_volume,
+                        avg_volume_20d=cand.avg_volume_20d, float_shares=cand.float_shares)
+        plan = self.risk.plan(snap, entry=sig.entry, stop=sig.stop)
+        if not plan.ok or plan.shares <= 0:
+            tr.state = "done"                # risk refuses — no order (mirrors dryrun)
+            rec = self._log("reject", symbol, reasons=plan.reasons)
+            return rec
+        order = {"symbol": symbol, "entry": round(sig.entry, 4), "stop": round(sig.stop, 4),
+                 "shares": plan.shares, "entry_tod": sig.entry_tod,
+                 "risk_dollars": plan.risk_dollars}
+        self.open[symbol] = order
+        return self._log("entry", **order)   # tagged event (kind="entry")
 
-    def _maybe_exit(self, end_of_day: bool) -> ExitSignal | None:
-        # Re-derive the entry + the identically-bounded forward window from the
-        # SAME function the backtest used, so prior/fwd match exactly.
-        ev = _find_event(self.bars, self.cfg)
-        if ev is None:                 # shouldn't happen once holding
+    def _exit(self, symbol: str, sig: ExitSignal) -> dict | None:
+        order = self.open.pop(symbol, None)
+        if order is None:
             return None
-        entry_idx, entry, stop, fwd = ev
-        if not fwd:
-            return None                # no forward bars yet
-        prior = self.bars[: entry_idx + 1]
-        fill = simulate_exit_detail(entry, stop, prior, fwd, self.policy, self.slip)
-        window_closed = end_of_day or self.bars[-1].tod > self._deadline
-        if fill.reason != "time" or window_closed:
-            self.state = "done"
-            return ExitSignal(self.symbol, fill.exit_price, fill.exit_tod, fill.reason, fill.r)
-        return None
+        _close(order, sig)                   # adds exit/exit_tod/reason/r/pnl
+        self.closed.append(order)
+        return self._log("exit", **order)    # tagged event (kind="exit")
+
+    def _log(self, kind: str, symbol: str, **extra) -> dict:
+        rec = {"kind": kind, "symbol": symbol, **extra}
+        self.intent.append(rec)
+        if len(self.intent) > _INTENT_CAP:
+            del self.intent[: len(self.intent) - _INTENT_CAP]
+        return rec

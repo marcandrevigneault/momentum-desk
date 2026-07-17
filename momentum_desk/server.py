@@ -26,8 +26,8 @@ from .backtest.data import MinuteBar
 from .config import AppConfig, build_adapter, load_config
 from .dryrun import supported
 from .journal import Journal
+from .live_engine import LiveEngine
 from .live_feed import MinuteBarAggregator
-from .live_trader import LiveEngine
 from .models import Signal, Snapshot
 from .paper import PaperDesk
 from .risk import RiskEngine

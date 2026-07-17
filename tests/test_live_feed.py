@@ -96,7 +96,7 @@ def test_emitted_bars_drive_the_engine():
     from momentum_desk.backtest.data import DayCandidate
     from momentum_desk.edge.portfolio import _policy
     from momentum_desk.edge.screen import ScreenConfig
-    from momentum_desk.live_engine import SymbolTracker
+    from momentum_desk.live_tracker import SymbolTracker
 
     cand = DayCandidate(symbol="AAA", day="2026-06-16", prev_close=4.0, day_open=5.0,
                         avg_volume_20d=1e6)

@@ -6,7 +6,7 @@ import urllib.error
 
 import pytest
 
-from momentum_desk.backtest.http import CachedClient, RateLimiter
+from momentum_desk.backtest.client import CachedClient, RateLimiter
 
 
 def test_cache_hit_avoids_second_fetch(tmp_path):
