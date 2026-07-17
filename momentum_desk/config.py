@@ -15,23 +15,19 @@ from .scanner import ScanConfig
 
 @dataclass
 class IBKRConfig:
-    # Legacy socket adapter (TWS / IB Gateway desktop) — see broker/ibkr.py.
-    host: str = "127.0.0.1"
-    port: int = 7497          # TWS paper
-    client_id: int = 17
-    # Client Portal Gateway (bravos-style REST + phone-push 2FA) — broker/ibkr_cp.py.
+    # Client Portal Gateway (REST + phone-push 2FA) — broker/cp/.
     # The gateway runs locally (auto-started by ibeam); login is one phone tap.
     gateway_url: str = "https://localhost:5000/v1/api"
     account_id: str = ""      # blank = use the first account the gateway reports
-    paper: bool = True        # paper-first; IBKR_PAPER=false to target the live account
+    paper: bool = True        # display-only intent; the hard guard is the DU-account
+                              # assertion at transmit time (live_transmit.decide)
 
 
 @dataclass
 class AppConfig:
     mode: str = "paper"       # paper | live
-    data_feed: str = "mock"   # mock | polygon | finnhub | ibkr
+    data_feed: str = "mock"   # mock | polygon
     polygon_api_key: str = ""
-    finnhub_api_key: str = ""
     scan_interval_s: float = 2.0
     ibkr: IBKRConfig = field(default_factory=IBKRConfig)
     scanner: ScanConfig = field(default_factory=ScanConfig)
@@ -59,8 +55,8 @@ def load_config(path: str = "config.yaml") -> AppConfig:
         # switched to the real feed with a DATA_FEED secret
         mode=os.environ.get("MODE") or raw.get("mode", "paper"),
         data_feed=os.environ.get("DATA_FEED") or raw.get("data_feed", "mock"),
-        polygon_api_key=raw.get("polygon_api_key", "") or os.environ.get("POLYGON_API_KEY", ""),
-        finnhub_api_key=raw.get("finnhub_api_key", "") or os.environ.get("FINNHUB_API_KEY", ""),
+        polygon_api_key=raw.get("polygon_api_key", "") or os.environ.get("POLYGON_API_KEY", "")
+        or os.environ.get("MASSIVE_API_KEY", ""),
         scan_interval_s=float(os.environ.get("SCAN_INTERVAL_S") or raw.get("scan_interval_s", 2.0)),
     )
     if isinstance(raw.get("ibkr"), dict):
@@ -82,16 +78,18 @@ def load_config(path: str = "config.yaml") -> AppConfig:
 
 
 def build_adapter(cfg: AppConfig):
-    """Return the configured data adapter, falling back to mock with a warning."""
+    """Return the configured data adapter. A misconfigured real feed FAILS LOUDLY
+    instead of silently degrading to mock — a desk that thinks it's watching the
+    market while replaying synthetic data is worse than one that won't start."""
     feed = cfg.data_feed
     if feed == "polygon":
         if not cfg.polygon_api_key:
-            print("[config] data_feed=polygon but no API key — falling back to mock")
-        else:
-            from .adapters.polygon import PolygonAdapter
-            return PolygonAdapter(cfg.polygon_api_key, cfg.scanner)
-    elif feed not in ("mock", ""):
-        print(f"[config] data_feed={feed} not implemented yet — falling back to mock")
+            raise ValueError("data_feed=polygon requires polygon_api_key "
+                             "(config.yaml) or POLYGON_API_KEY (env)")
+        from .adapters.polygon import PolygonAdapter
+        return PolygonAdapter(cfg.polygon_api_key, cfg.scanner)
+    if feed not in ("mock", ""):
+        raise ValueError(f"unknown data_feed {feed!r} (supported: mock | polygon)")
 
     from .adapters.mock import MockReplayAdapter
     return MockReplayAdapter()

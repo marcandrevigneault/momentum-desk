@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from .backtest.data import MinuteBar
 from .config import AppConfig, build_adapter, load_config
 from .dryrun import supported
+from .journal import Journal
 from .live_feed import MinuteBarAggregator
 from .live_trader import LiveEngine
 from .models import Signal, Snapshot
@@ -98,6 +99,20 @@ class ScannerService:
         self.entries_halted = False         # daily-loss breaker (exits still allowed)
         self.pending_orders: list[dict] = []   # intended events awaiting transmission
         self.transmitted: list[dict] = []      # log of send/skip/halt outcomes
+        self.stop_orders: dict[str, str] = {}  # symbol -> resting protective-stop order id
+        self._journal: Journal | None = None   # per-session JSONL (lazy, day-rolled)
+        self._journal_day = ""
+
+    @property
+    def journal(self) -> Journal:
+        """The session journal (journal/live-YYYY-MM-DD.jsonl), rolled daily.
+        Every engine intent, transmit decision, and order outcome lands here so
+        the day can be reviewed with `python -m momentum_desk.journal`."""
+        day = _et_day()
+        if self._journal is None or self._journal_day != day:
+            self._journal = Journal(Path("journal") / f"live-{day}.jsonl")
+            self._journal_day = day
+        return self._journal
 
     def set_strategy(self, strategy) -> None:
         """Attach (or detach) the strategy the live engine evaluates on the tape."""
@@ -125,6 +140,12 @@ class ScannerService:
                     del buf[: len(buf) - _HISTORY_CAP]
                 if self.live is not None:
                     ev = self.live.on_bar(s.symbol, bar)   # intended entries/exits
+                    if ev is not None and ev.get("kind") in ("entry", "exit", "reject"):
+                        # journal every engine intent, armed or dry-run — reviewing
+                        # decisions is the point, and dry-run days count too
+                        self.journal.record(
+                            "signal", intent=ev.get("kind"),
+                            **{k: v for k, v in ev.items() if k != "kind"})
                     if self.armed and ev is not None and ev.get("kind") in ("entry", "exit"):
                         self.pending_orders.append(ev)     # drained by the engine loop
 
@@ -234,11 +255,13 @@ class BasicAuthMiddleware:
 async def _transmit_pending(svc: ScannerService) -> None:
     """Drain the intended-order queue to the IBKR paper account. The SINGLE place
     a real order is sent. Paper-only hard stop; entries face the daily-loss
-    breaker + trading window; exits are always allowed to close. Never raises."""
+    breaker + trading window and carry a broker-resident protective stop; exits
+    cancel the resting stop and close while the broker still holds the symbol.
+    Never raises."""
     if not svc.armed or not svc.pending_orders:
         svc.pending_orders.clear()
         return
-    from .live_transmit import decide, transmit_order
+    from .live_transmit import decide, order_ids, transmit_entry, transmit_exit
     client = getattr(app.state, "ibkr_client", None)
     if client is None:
         svc.pending_orders.clear()
@@ -257,9 +280,12 @@ async def _transmit_pending(svc: ScannerService) -> None:
 
     queue, svc.pending_orders = svc.pending_orders, []
     for ev in queue:
+        symbol = ev.get("symbol", "?")
         d = decide(ev, armed=svc.armed, entries_halted=svc.entries_halted,
                    paper=paper, in_window=in_window, held=held)
         rec = {**ev, "decision": d.action, "decision_reason": d.reason}
+        action = {"send": "taken", "skip": "skipped"}.get(d.action, d.action)
+        svc.journal.log_decision(symbol, action, d.reason, intent=ev.get("kind"))
         if d.action == "halt":
             svc.armed = False                # paper assertion failed — kill the switch
             print(f"[trade] HALT: {d.reason}. disarmed.")
@@ -269,16 +295,38 @@ async def _transmit_pending(svc: ScannerService) -> None:
             svc.transmitted.append(rec)
             continue
         try:
-            reply = await transmit_order(client, account_id, ev["symbol"], d.side, ev["shares"])
+            if d.side == "BUY":
+                # entry parent + broker-resident protective stop, one submission —
+                # a crashed desk never leaves a naked position
+                reply = await transmit_entry(client, account_id, symbol,
+                                             ev["shares"], ev["stop"])
+                ids = order_ids(reply)
+                stop_id = ids[1] if len(ids) > 1 else None
+                if stop_id:
+                    svc.stop_orders[symbol.upper()] = stop_id
+                rec.update(order_ids=ids, stop_order_id=stop_id)
+                held.add(symbol.upper())
+            else:
+                # cancel the resting stop first (best-effort), then close
+                stop_id = svc.stop_orders.pop(symbol.upper(), None)
+                reply = await transmit_exit(client, account_id, symbol,
+                                            ev["shares"], stop_order_id=stop_id)
+                rec["stop_order_id"] = stop_id
             rec["transmitted"] = True
             rec["broker_reply"] = reply
-            if d.side == "BUY":
-                held.add(ev["symbol"].upper())
-            print(f"[trade] SENT {d.side} {ev['shares']} {ev['symbol']} -> {reply}")
+            svc.journal.log_fill({
+                "symbol": symbol, "side": d.side, "shares": ev.get("shares"),
+                "entry": ev.get("entry"), "stop": ev.get("stop"),
+                "exit": ev.get("exit"), "pnl": ev.get("pnl"),
+                "order_ids": rec.get("order_ids") or order_ids(reply),
+                "stop_order_id": rec.get("stop_order_id"),
+            })
+            print(f"[trade] SENT {d.side} {ev['shares']} {symbol} -> {reply}")
         except Exception as e:  # noqa: BLE001
             rec["transmitted"] = False
             rec["error"] = str(e)
-            print(f"[trade] send failed {ev['symbol']}: {e}")
+            svc.journal.record("error", symbol=symbol, intent=ev.get("kind"), error=str(e))
+            print(f"[trade] send failed {symbol}: {e}")
         svc.transmitted.append(rec)
 
     # daily-loss breaker (proxy on the engine's intended day P&L): halt new entries
@@ -295,7 +343,8 @@ async def _engine_loop(svc: ScannerService, interval_s: float) -> None:
     """Headless ticker: poll the feed and drive the aggregator + live engine on a
     schedule, independent of any dashboard WebSocket. Only polls inside the
     session window. Swallows its own errors so one bad tick never kills the loop.
-    Transmits NOTHING — it only computes intended orders."""
+    Dry-run computes intended orders only; when armed it also drains them
+    through ``_transmit_pending``."""
     print(f"[engine] live-intent loop started (interval={interval_s}s, dry-run)")
     while True:
         try:

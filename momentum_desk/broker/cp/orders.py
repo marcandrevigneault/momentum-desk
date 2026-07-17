@@ -87,6 +87,35 @@ def build_limit_order(
     }
 
 
+def build_entry_with_stop(
+    account_id: str,
+    conid: int,
+    side: OrderSide,
+    quantity: Decimal | int | float,
+    stop_price: Decimal | int | float,
+    *,
+    tif: TIF = "DAY",
+    outside_rth: bool = False,
+) -> list[dict]:
+    """Market entry parent + broker-resident protective stop child (opposite
+    side), submitted together. DAY tif on both: the desk is intraday, so a DAY
+    stop keeps a crashed desk protected until the close without leaking stale
+    GTC orders into the next session."""
+    parent_coid = uuid4().hex
+    opposite: OrderSide = "SELL" if side == "BUY" else "BUY"
+    qty = _num(quantity)
+    parent = {
+        "acctId": account_id, "conid": int(conid), "orderType": "MKT", "side": side,
+        "quantity": qty, "tif": tif, "cOID": parent_coid, "outsideRTH": outside_rth,
+    }
+    stop_child = {
+        "acctId": account_id, "conid": int(conid), "orderType": "STP", "side": opposite,
+        "quantity": qty, "auxPrice": _num(stop_price), "tif": tif,
+        "cOID": uuid4().hex, "parentId": parent_coid, "outsideRTH": outside_rth,
+    }
+    return [parent, stop_child]
+
+
 def build_bracket(
     *,
     account_id: str,
