@@ -10,7 +10,8 @@ the trader applies above the engine, identically to run_simulation).
 from __future__ import annotations
 
 from momentum_desk.backtest.providers import SyntheticHistory
-from momentum_desk.edge.portfolio import SimConfig, _policy, run_simulation
+from momentum_desk.edge.exits import get_policy
+from momentum_desk.edge.portfolio import SimConfig, run_simulation
 from momentum_desk.edge.screen import ScreenConfig, _passes_gate
 from momentum_desk.live_tracker import EntrySignal, ExitSignal, SymbolTracker
 from momentum_desk.risk import RiskConfig
@@ -45,7 +46,7 @@ def _replay_day(provider, day, cfg, policy, slippage):
 def _run(session: str, exit_policy: str):
     provider = SyntheticHistory(days=60, session=session)
     cfg = ScreenConfig(session=session)
-    policy = _policy(exit_policy)
+    policy = get_policy(exit_policy)
     # backtest: no capacity cap, permissive risk → every signal becomes a trade
     scfg = SimConfig(session=session, exit_policy=exit_policy, max_concurrent=10_000, max_gross_pct=1e12)
     risk = RiskConfig(account_equity=1e9, max_pct_of_recent_volume=100.0,
@@ -84,7 +85,7 @@ def test_tracker_emits_entry_then_exit_in_order():
     for cand in provider.candidates(day):
         if not _passes_gate(cand, cfg):
             continue
-        t = SymbolTracker(cand, cfg, _policy("pct_trail_10"))
+        t = SymbolTracker(cand, cfg, get_policy("pct_trail_10"))
         order = []
         for b in provider.minutes(cand.symbol, day):
             sig = t.on_bar(b)

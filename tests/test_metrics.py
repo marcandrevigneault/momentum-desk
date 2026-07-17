@@ -1,5 +1,5 @@
 """Direct coverage for the shared metrics core — the single source of truth that
-the Backtester, account simulator, and combo engine all compute stats through."""
+the account simulator, combo engine, and live dry-run all compute stats through."""
 from __future__ import annotations
 
 from momentum_desk.backtest.data import Trade

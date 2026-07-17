@@ -94,13 +94,13 @@ def test_emitted_bars_drive_the_engine():
     """The aggregator's output feeds SymbolTracker.on_bar without adaptation —
     proving the live path produces exactly the bar shape the engine expects."""
     from momentum_desk.backtest.data import DayCandidate
-    from momentum_desk.edge.portfolio import _policy
+    from momentum_desk.edge.exits import get_policy
     from momentum_desk.edge.screen import ScreenConfig
     from momentum_desk.live_tracker import SymbolTracker
 
     cand = DayCandidate(symbol="AAA", day="2026-06-16", prev_close=4.0, day_open=5.0,
                         avg_volume_20d=1e6)
-    tracker = SymbolTracker(cand, ScreenConfig(session="intraday"), _policy("pct_trail_10"))
+    tracker = SymbolTracker(cand, ScreenConfig(session="intraday"), get_policy("pct_trail_10"))
     agg = MinuteBarAggregator()
     # a rising tape: each minute closes higher than the last
     for i in range(20):

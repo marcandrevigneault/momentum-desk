@@ -26,7 +26,7 @@ def test_backtest_result_contract():
 
 
 def test_trade_contract():
-    # the single-backtest Trade (BacktesterPage reads entry_t/exit_t/stop/target)
+    # the per-trade record every engine emits (chart code reads entry_t/exit_t/stop/target)
     assert _names(Trade) == {
         "symbol", "day", "entry_t", "entry", "stop", "target", "shares",
         "exit_t", "exit", "pnl", "r_multiple", "exit_reason",

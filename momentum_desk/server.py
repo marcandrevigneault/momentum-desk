@@ -14,7 +14,6 @@ import json
 import os
 import secrets
 import time
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -31,7 +30,7 @@ from .live_feed import MinuteBarAggregator
 from .models import Signal, Snapshot
 from .paper import PaperDesk
 from .risk import RiskEngine
-from .scanner import ScanConfig, ScannerEngine
+from .scanner import ScannerEngine
 
 _HISTORY_CAP = 240   # intraday points kept per symbol for the chart
 _SESSION_OPEN_TOD = 240    # 04:00 ET — premarket; engine watches from here
@@ -83,7 +82,6 @@ class ScannerService:
         self.scanner = ScannerEngine(cfg.scanner)
         self.risk = RiskEngine(cfg.risk)
         self.desk = PaperDesk(self.risk)
-        self.history: dict[str, list[dict]] = {}
         self.last_price: dict[str, float] = {}
         # live tape → closed MinuteBars (the shape the reconciled engine eats);
         # retained per symbol so /api/live/bars can show the live feed is sound.
@@ -149,13 +147,9 @@ class ScannerService:
                     if self.armed and ev is not None and ev.get("kind") in ("entry", "exit"):
                         self.pending_orders.append(ev)     # drained by the engine loop
 
-    def _record_history(self, snaps: list[Snapshot]) -> None:
+    def _record_prices(self, snaps: list[Snapshot]) -> None:
         for s in snaps:
             self.last_price[s.symbol] = s.last
-            buf = self.history.setdefault(s.symbol, [])
-            buf.append({"t": round(s.ts, 1), "last": s.last, "vwap": round(s.vwap, 4)})
-            if len(buf) > _HISTORY_CAP:
-                del buf[: len(buf) - _HISTORY_CAP]
 
     def stop_for(self, snap: Snapshot) -> float:
         return round(snap.last * 0.95, 2)   # illustrative 5% initial stop
@@ -164,7 +158,7 @@ class ScannerService:
         # adapters do blocking I/O (HTTP); keep the event loop free
         snaps = await asyncio.to_thread(lambda: list(self.adapter.poll()))
         by_symbol = {s.symbol: s for s in snaps}
-        self._record_history(snaps)
+        self._record_prices(snaps)
         self._aggregate(snaps)
         self.desk.update(self.last_price)   # trail stops + auto-exit on stop/target
         signals = self.scanner.scan(snaps)
@@ -365,7 +359,6 @@ async def _engine_loop(svc: ScannerService, interval_s: float) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.service = ScannerService(load_config())
-    app.state.jobs = {}          # job_id -> {status, params, started, result, error}
     cfg = app.state.service.cfg
     print(f"[server] feed={app.state.service.adapter.name} mode={cfg.mode} "
           f"interval={cfg.scan_interval_s}s")
@@ -647,23 +640,21 @@ async def signals() -> dict:
     return await app.state.service.scan_once()
 
 
-@app.get("/api/history/{symbol}")
-async def history(symbol: str) -> dict:
-    svc: ScannerService = app.state.service
-    return {"symbol": symbol, "points": svc.history.get(symbol, [])}
+def _polygon_key() -> str:
+    return os.environ.get("POLYGON_API_KEY", "") or load_config().polygon_api_key
 
 
 @app.get("/api/bars/{symbol}")
 async def bars(symbol: str, tf: str = "1m") -> dict:
-    """Real OHLC candles from Massive for the chart — proper history on click
+    """Real OHLC candles from Polygon for the chart — proper history on click
     instead of waiting for the slow live stream to accumulate points."""
     import datetime as dt
     import urllib.parse
     import urllib.request
 
-    key = _massive_key()
+    key = _polygon_key()
     if not key:
-        return {"symbol": symbol, "tf": tf, "candles": [], "error": "no Massive key configured"}
+        return {"symbol": symbol, "tf": tf, "candles": [], "error": "no Polygon key configured"}
     mult, span, days = {"1m": (1, "minute", 4), "5m": (5, "minute", 10),
                         "1d": (1, "day", 200)}.get(tf, (1, "minute", 4))
     today = dt.date.today()
@@ -736,58 +727,6 @@ async def live_intent() -> dict:
     return snap
 
 
-@app.post("/api/backtest")
-async def backtest(session: str = "premarket", days: int = 60, target_r: float = 2.0,
-                   slippage_pct: float = 0.1, max_hold: int = 60, time_exit_tod: int = 0) -> dict:
-    """Run a backtest and return its equity curve, metrics, and trades for the
-    visualizer. Uses synthetic data here (the hosted app has no data key), so
-    results are an engine illustration, not strategy evidence."""
-    from dataclasses import asdict
-
-    from .backtest import Backtester, SyntheticHistory
-    from .backtest.engine import BacktestConfig
-    from .backtest.review import breakdowns
-
-    session = session if session in ("premarket", "intraday", "regular") else "premarket"
-    days = max(5, min(int(days), 120))
-
-    def run():
-        prov = SyntheticHistory(days=days, session=session)
-        bt = BacktestConfig(session=session, target_r=target_r, max_hold_minutes=max_hold,
-                            slippage_pct=slippage_pct, premarket_slippage_pct=slippage_pct,
-                            time_exit_tod=int(time_exit_tod))
-        return Backtester(prov, bt=bt).run()
-
-    res = await asyncio.to_thread(run)
-    bd = breakdowns(res.trades)
-    out = {
-        "synthetic": True,
-        "session": session,
-        "days": res.days,
-        "metrics": asdict(res.metrics),
-        "equity_curve": res.equity_curve,
-        "trades": [asdict(t) for t in res.trades],
-        "monthly": bd["monthly"],
-        "yearly": bd["yearly"],
-    }
-    _save_run("synthetic", {"session": session, "days": days, "target_r": target_r,
-                            "time_exit_tod": time_exit_tod}, out)
-    return out
-
-
-@app.get("/api/realrun")
-async def realrun() -> dict:
-    """Serve the latest local multi-year real-data run (scripts/realrun.py
-    writes data/realrun.json). Absent on the hosted app — real runs are local."""
-    p = Path("data/realrun.json")
-    if not p.exists():
-        return {"available": False}
-    try:
-        return {"available": True, **json.loads(p.read_text())}
-    except Exception:  # noqa: BLE001
-        return {"available": False}
-
-
 @app.get("/api/edge")
 async def edge_screen() -> dict:
     """Phase-1 edge screen: per-feature information coefficient + decile-lift for
@@ -815,28 +754,6 @@ async def edge_screen() -> dict:
         if session in snapshot:
             out["sessions"][session] = snapshot[session]
     return out
-
-
-@app.get("/api/simrun")
-async def sim_run(window: str = "1y", compound: bool = False) -> dict:
-    """Full end-to-end account simulation. `window` selects the horizon: "1y"
-    (last year) or "5y" (last five years). `compound` sizes risk off the live
-    book instead of the fixed start balance. Prefers a fresh run on the volume,
-    else the committed snapshot."""
-    suffix = ("_5y" if window == "5y" else "") + ("_c" if compound else "")
-    fresh = Path(f"data/sim{'_5y' if window == '5y' else '_year'}{'_c' if compound else ''}.json")
-    if fresh.exists():
-        try:
-            return {"source": "live", **json.loads(fresh.read_text())}
-        except Exception:  # noqa: BLE001
-            pass
-    snap = Path(__file__).parent / "edge" / f"sim_snapshot{suffix}.json"
-    if snap.exists():
-        try:
-            return {"source": "snapshot", **json.loads(snap.read_text())}
-        except Exception:  # noqa: BLE001
-            pass
-    return {"source": "none", "trades": [], "metrics": {}}
 
 
 _EVAL_CACHE: dict = {}
@@ -868,7 +785,7 @@ async def evaluate_config(session: str = "intraday", max_ext: float | None = Non
                           min_move: float = 0.0, exit: str = "pct_trail_10") -> dict:
     """Score one variable combination off the precomputed cache — instant. Drives
     the live variable editor (#6)."""
-    from .edge.tuner import evaluate
+    from .edge.optimize import evaluate_cache as evaluate
     c = _load_eval_cache()
     events = c.get("sessions", {}).get(session, [])
     if not events:
@@ -893,93 +810,6 @@ async def rules_results() -> dict:
         except Exception:  # noqa: BLE001
             pass
     return {"source": "none", "results": []}
-
-
-@app.get("/api/combos-optimize")
-async def combos_optimize() -> dict:
-    """Combo parameter sweep (#6): best config per combo + whether any combo beats
-    intraday-alone. Drives the combo 'optimized' badge."""
-    snap = Path(__file__).parent / "edge" / "combos_optimize_snapshot.json"
-    if snap.exists():
-        try:
-            return {"source": "snapshot", **json.loads(snap.read_text())}
-        except Exception:  # noqa: BLE001
-            pass
-    return {"source": "none", "results": []}
-
-
-@app.get("/api/optimize")
-async def optimize_results() -> dict:
-    """Per-session optimizer results (#6): best config + deflated Sharpe + whether
-    it's robust (DSR≥95%). Drives the 'optimized' badge."""
-    snap = Path(__file__).parent / "edge" / "optimize_snapshot.json"
-    if snap.exists():
-        try:
-            return {"source": "snapshot", **json.loads(snap.read_text())}
-        except Exception:  # noqa: BLE001
-            pass
-    return {"source": "none", "sessions": {}}
-
-
-_ACTIVE_STRATEGY = Path("data/active_strategy.json")
-
-
-@app.get("/api/active-strategy")
-async def get_active_strategy() -> dict:
-    if _ACTIVE_STRATEGY.exists():
-        try:
-            return json.loads(_ACTIVE_STRATEGY.read_text())
-        except Exception:  # noqa: BLE001
-            pass
-    return {"active": None}
-
-
-@app.post("/api/active-strategy")
-async def set_active_strategy(payload: dict) -> dict:
-    """Persist the user's chosen 'active strategy' (the analyser's selection)."""
-    _ACTIVE_STRATEGY.parent.mkdir(parents=True, exist_ok=True)
-    rec = {"active": payload.get("active"), "label": payload.get("label", ""), "ts": time.time()}
-    _ACTIVE_STRATEGY.write_text(json.dumps(rec))
-    return {"ok": True, **rec}
-
-
-@app.get("/api/combos")
-async def combos_all(window: str = "1y") -> dict:
-    """Named combos for the selector (each carries a full trade log). `window` =
-    1y | 5y. Prefers a fresh file on the volume, else the committed snapshot."""
-    suffix = "_5y" if window == "5y" else ""
-    fresh = Path(f"data/combos{suffix}.json")
-    if fresh.exists():
-        try:
-            return {"source": "live", **json.loads(fresh.read_text())}
-        except Exception:  # noqa: BLE001
-            pass
-    snap = Path(__file__).parent / "edge" / f"combos_snapshot{suffix}.json"
-    if snap.exists():
-        try:
-            return {"source": "snapshot", **json.loads(snap.read_text())}
-        except Exception:  # noqa: BLE001
-            pass
-    return {"source": "none", "combos": {}}
-
-
-@app.get("/api/combo")
-async def combo_run(window: str = "1y") -> dict:
-    """Multi-style combo: several strategy legs in one shared-capital book.
-    `window` = "1y" | "5y". Prefers a fresh run on the volume, else the snapshot."""
-    fresh = Path(f"data/combo{'_5y' if window == '5y' else '_real'}.json")
-    if fresh.exists():
-        try:
-            return {"source": "live", **json.loads(fresh.read_text())}
-        except Exception:  # noqa: BLE001
-            pass
-    snap = Path(__file__).parent / "edge" / f"combo_snapshot{'_5y' if window == '5y' else ''}.json"
-    if snap.exists():
-        try:
-            return {"source": "snapshot", **json.loads(snap.read_text())}
-        except Exception:  # noqa: BLE001
-            pass
-    return {"source": "none", "trades": [], "metrics": {}, "legs": []}
 
 
 @app.get("/api/gauntlet")
@@ -1036,190 +866,6 @@ async def exit_lab() -> dict:
                 pass
         if session in snapshot:
             out["sessions"][session] = snapshot[session]
-    return out
-
-
-# ---- saved-runs store (persisted on the volume at /app/data) ----
-_RUNS_DIR = Path("data/runs")
-
-
-def _save_run(kind: str, params: dict, result: dict) -> str:
-    _RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    rid = f"{int(time.time())}-{uuid.uuid4().hex[:6]}"
-    rec = {"id": rid, "ts": time.time(), "kind": kind, "params": params, "result": result}
-    (_RUNS_DIR / f"{rid}.json").write_text(json.dumps(rec))
-    # keep the store bounded: newest 60
-    for old in sorted(_RUNS_DIR.glob("*.json"))[:-60]:
-        try:
-            old.unlink()
-        except OSError:
-            pass
-    return rid
-
-
-def _run_summary(rec: dict) -> dict:
-    r, m, p = rec.get("result", {}), rec.get("result", {}).get("metrics", {}), rec.get("params", {})
-    return {
-        "id": rec["id"], "ts": rec.get("ts", 0), "kind": rec.get("kind", "?"),
-        "synthetic": r.get("synthetic"), "session": r.get("session"), "days": r.get("days"),
-        "trades": m.get("trades"), "expectancy_r": m.get("expectancy_r"),
-        "total_pnl": m.get("total_pnl"), "max_drawdown_pct": m.get("max_drawdown_pct"),
-        "target_r": p.get("target_r"), "time_exit_tod": p.get("time_exit_tod"),
-    }
-
-
-@app.get("/api/backtest/runs")
-async def list_runs() -> dict:
-    runs = []
-    if _RUNS_DIR.is_dir():
-        for f in sorted(_RUNS_DIR.glob("*.json"), reverse=True)[:60]:
-            try:
-                runs.append(_run_summary(json.loads(f.read_text())))
-            except Exception:  # noqa: BLE001
-                pass
-    # surface a local multi-year realrun.json as a pinned entry, if present
-    rr = Path("data/realrun.json")
-    if rr.exists():
-        try:
-            d = json.loads(rr.read_text())
-            m, bp = d.get("metrics", {}), d.get("best_params", {})
-            runs.append({"id": "realrun", "ts": 0, "kind": "real-sweep", "synthetic": False,
-                         "session": d.get("session"), "days": d.get("days"),
-                         "trades": m.get("trades"), "expectancy_r": m.get("expectancy_r"),
-                         "total_pnl": m.get("total_pnl"), "max_drawdown_pct": m.get("max_drawdown_pct"),
-                         "target_r": bp.get("target_r"), "time_exit_tod": bp.get("time_exit_tod")})
-        except Exception:  # noqa: BLE001
-            pass
-    return {"runs": runs}
-
-
-@app.get("/api/backtest/runs/{rid}")
-async def get_run(rid: str) -> dict:
-    if rid == "realrun":
-        rr = Path("data/realrun.json")
-        return {"result": json.loads(rr.read_text())} if rr.exists() else {"result": None}
-    f = _RUNS_DIR / f"{rid}.json"
-    if f.exists():
-        return {"result": json.loads(f.read_text()).get("result")}
-    return {"result": None}
-
-
-@app.delete("/api/backtest/runs/{rid}")
-async def delete_run(rid: str) -> dict:
-    f = _RUNS_DIR / f"{rid}.json"
-    if rid != "realrun" and f.exists():
-        f.unlink()
-        return {"ok": True}
-    return {"ok": False}
-
-
-@app.get("/api/backtest/jobs")
-async def list_jobs() -> dict:
-    """All known jobs (running + recently finished) for the live panel."""
-    jobs = []
-    for jid, j in app.state.jobs.items():
-        jobs.append({
-            "id": jid, "status": j["status"], "elapsed": round(time.time() - j["started"], 1),
-            "progress": round(j.get("progress", 0.0), 3), "params": j["params"],
-            "error": j.get("error"),
-        })
-    jobs.sort(key=lambda x: x["elapsed"])
-    return {"jobs": jobs}
-
-
-def _massive_key() -> str:
-    return os.environ.get("POLYGON_API_KEY", "") or load_config().polygon_api_key
-
-
-def _run_real_backtest(p: dict, on_progress=None) -> dict:
-    """Blocking: a real Massive-data backtest. Runs in a worker thread. First
-    multi-year run fetches a lot (cached to disk after); re-runs replay fast."""
-    from dataclasses import asdict
-
-    from .backtest import Backtester, PolygonHistory
-    from .backtest.engine import BacktestConfig
-    from .backtest.review import breakdowns
-
-    key = _massive_key()
-    if not key:
-        raise RuntimeError("no Massive/POLYGON_API_KEY configured on the server")
-    universe = "active" if p["session"] == "intraday" else "gap"
-    prov = PolygonHistory(key, days=p["days"], max_per_min=0, max_candidates_per_day=p["max_candidates"],
-                          fetch_news=False, cache_dir="data/cache/polygon", universe_mode=universe)
-    scan = ScanConfig(require_news=False, min_relative_volume=p["min_rvol"])
-    bt = BacktestConfig(session=p["session"], target_r=p["target_r"], max_hold_minutes=p["max_hold"],
-                        slippage_pct=p["slippage_pct"], premarket_slippage_pct=p["slippage_pct"],
-                        time_exit_tod=p["time_exit_tod"])
-    res = Backtester(prov, scan=scan, bt=bt).run(on_progress=on_progress)
-    bd = breakdowns(res.trades)
-    return {
-        "synthetic": False, "feed": "massive", "session": p["session"], "days": res.days,
-        "metrics": asdict(res.metrics), "equity_curve": res.equity_curve,
-        "trades": [asdict(t) for t in res.trades], "monthly": bd["monthly"], "yearly": bd["yearly"],
-    }
-
-
-_MAX_CONCURRENT_JOBS = 3
-
-
-async def _job_worker(job_id: str, params: dict) -> None:
-    job = app.state.jobs[job_id]
-
-    def on_progress(frac: float) -> None:
-        job["progress"] = frac
-
-    try:
-        job["result"] = await asyncio.to_thread(_run_real_backtest, params, on_progress)
-        job["status"] = "done"
-        job["progress"] = 1.0
-        _save_run("real", params, job["result"])
-    except Exception as e:  # noqa: BLE001
-        job["status"] = "error"
-        job["error"] = str(e)
-    # drop the oldest finished jobs so the registry doesn't grow forever
-    finished = [k for k, v in app.state.jobs.items() if v["status"] != "running"]
-    for k in sorted(finished, key=lambda k: app.state.jobs[k]["started"])[:-20]:
-        app.state.jobs.pop(k, None)
-
-
-@app.post("/api/backtest/launch")
-async def backtest_launch(session: str = "premarket", days: int = 252, target_r: float = 2.0,
-                          slippage_pct: float = 0.5, max_hold: int = 60, time_exit_tod: int = 630,
-                          min_rvol: float = 3.0, max_candidates: int = 20) -> dict:
-    """Kick off a REAL Massive-data backtest in the background (so a multi-year
-    run doesn't time out the request). Concurrent runs allowed up to a cap.
-    Poll /api/backtest/job/{id} or the panel via /api/backtest/jobs."""
-    if not _massive_key():
-        return {"ok": False, "error": "no Massive key configured on the server"}
-    running = sum(1 for j in app.state.jobs.values() if j["status"] == "running")
-    if running >= _MAX_CONCURRENT_JOBS:
-        return {"ok": False,
-                "error": f"{running} running (max {_MAX_CONCURRENT_JOBS}) — wait for one to finish"}
-    params = {
-        "session": session if session in ("premarket", "intraday", "regular") else "premarket",
-        "days": max(5, min(int(days), 1300)),   # up to ~5y
-        "target_r": target_r, "slippage_pct": slippage_pct, "max_hold": max_hold,
-        "time_exit_tod": int(time_exit_tod), "min_rvol": min_rvol,
-        "max_candidates": max(1, min(int(max_candidates), 25)),
-    }
-    job_id = uuid.uuid4().hex[:12]
-    app.state.jobs[job_id] = {"status": "running", "params": params, "started": time.time(),
-                              "result": None, "error": None, "progress": 0.0}
-    asyncio.create_task(_job_worker(job_id, params))
-    return {"ok": True, "job_id": job_id, "params": params}
-
-
-@app.get("/api/backtest/job/{job_id}")
-async def backtest_job(job_id: str) -> dict:
-    job = app.state.jobs.get(job_id)
-    if job is None:
-        return {"status": "unknown"}
-    out = {"status": job["status"], "elapsed": round(time.time() - job["started"], 1),
-           "params": job["params"]}
-    if job["status"] == "done":
-        out["result"] = job["result"]
-    elif job["status"] == "error":
-        out["error"] = job["error"]
     return out
 
 

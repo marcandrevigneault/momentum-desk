@@ -23,9 +23,9 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 
 from ..backtest.data import HistoricalProvider, MinuteBar
-from .exits import ExitPolicy, simulate_exit
+from .exits import POLICIES, ExitPolicy, simulate_exit
 from .screen import ScreenConfig, iter_entry_events
-from .stats import _expected_max_sharpe, _psr, _sharpe, _skew_kurt, _std
+from .stats import _sharpe, _skew_kurt, deflate_best
 
 
 @dataclass
@@ -97,33 +97,47 @@ def _daily_returns(rs_by_day: dict[str, float]) -> list[float]:
     return [rs_by_day[d] for d in sorted(rs_by_day)]
 
 
+def score_rs(rs: list[float], by_day: dict[str, float], min_n: int) -> dict | None:
+    """THE metric block every evaluator reports (n, expectancy, win rate, profit
+    factor, daily Sharpe) — the optimizer grid, the rule runner, and the cached
+    tuner all score through this one function. None = too few trades to score."""
+    if len(rs) < min_n:
+        return None
+    wins = [x for x in rs if x > 0]
+    losses = [x for x in rs if x <= 0]
+    gp, gl = sum(wins), -sum(losses)
+    return {
+        "n": len(rs),
+        "expectancy_r": round(sum(rs) / len(rs), 4),
+        "win_rate": round(len(wins) / len(rs), 4),
+        "profit_factor": round(gp / gl, 3) if gl > 0 else float("inf"),
+        "daily_sharpe": round(_sharpe(_daily_returns(by_day)), 4),
+    }
+
+
+def _matches(e: EvalEvent, cfg: ParamConfig) -> bool:
+    if cfg.max_ext_pct is not None and e.ext_vwap_pct > cfg.max_ext_pct:
+        return False
+    if e.rvol < cfg.rvol_min or (cfg.rvol_max is not None and e.rvol > cfg.rvol_max):
+        return False
+    return e.move_from_open_pct >= cfg.min_move_pct
+
+
 def eval_config(events: list[EvalEvent], cfg: ParamConfig, slippage_pct: float) -> ConfigResult:
     rs: list[float] = []
     by_day: dict[str, float] = {}
     for e in events:
-        if cfg.max_ext_pct is not None and e.ext_vwap_pct > cfg.max_ext_pct:
-            continue
-        if e.rvol < cfg.rvol_min:
-            continue
-        if cfg.rvol_max is not None and e.rvol > cfg.rvol_max:
-            continue
-        if e.move_from_open_pct < cfg.min_move_pct:
+        if not _matches(e, cfg):
             continue
         r, _reason, _held = simulate_exit(e.entry, e.init_stop, e.prior, e.fwd, cfg.exit_policy, slippage_pct)
         rs.append(r)
         by_day[e.day] = by_day.get(e.day, 0.0) + r
-    if len(rs) < 20:
+    s = score_rs(rs, by_day, min_n=20)
+    if s is None:
         return ConfigResult(cfg.label(), len(rs), 0.0, 0.0, 0.0, 0.0)
-    wins = [x for x in rs if x > 0]
-    losses = [x for x in rs if x <= 0]
-    gp, gl = sum(wins), -sum(losses)
-    return ConfigResult(
-        label=cfg.label(), n=len(rs),
-        expectancy_r=round(sum(rs) / len(rs), 4),
-        daily_sharpe=round(_sharpe(_daily_returns(by_day)), 4),
-        win_rate=round(len(wins) / len(rs), 4),
-        profit_factor=round(gp / gl, 3) if gl > 0 else float("inf"),
-    )
+    return ConfigResult(label=cfg.label(), n=s["n"], expectancy_r=s["expectancy_r"],
+                        daily_sharpe=s["daily_sharpe"], win_rate=s["win_rate"],
+                        profit_factor=s["profit_factor"])
 
 
 # ---- the search space ------------------------------------------------------
@@ -182,16 +196,15 @@ def optimize(provider: HistoricalProvider, cfg: ScreenConfig, grid: list[ParamCo
     out = OptimizeResult(n_configs=len(grid), n_events=len(events), ranked=valid)
     if valid:
         # DEFLATE: the best of N configs is inflated. Bar = E[max Sharpe] over the
-        # trials, using the spread of Sharpes actually observed in the search.
-        sharpes = [r.daily_sharpe for r in valid]
-        sr_var = _std(sharpes, ddof=0) ** 2 if len(sharpes) > 1 else 0.0
+        # trials, using the spread of Sharpes actually observed in the search —
+        # the same stats.deflate_best the gauntlet uses.
         best = valid[0]
         out.best_label = best.label
         out.best_sharpe = best.daily_sharpe
-        out.sr_star = round(_expected_max_sharpe(sr_var, len(grid)), 4)
         # daily-Sharpe DSR needs the candidate's daily-return moments; recompute
         skew, kurt, n_days = _winner_daily_moments(events, _config_by_label(grid, best.label), slippage_pct)
-        out.deflated_sharpe = round(_psr(best.daily_sharpe, out.sr_star, n_days, skew, kurt), 4)
+        out.sr_star, out.deflated_sharpe = deflate_best(
+            best.daily_sharpe, [r.daily_sharpe for r in valid], len(grid), n_days, skew, kurt)
         if out.deflated_sharpe < 0.95:
             out.note = (f"WINNER LIKELY OVERFIT: deflated Sharpe {out.deflated_sharpe:.0%} < 95% after "
                         f"searching {len(grid)} configs — its edge does not clear the multiple-testing bar.")
@@ -209,14 +222,67 @@ def _winner_daily_moments(events: list[EvalEvent], cfg: ParamConfig,
                           slippage_pct: float) -> tuple[float, float, int]:
     by_day: dict[str, float] = {}
     for e in events:
-        if cfg.max_ext_pct is not None and e.ext_vwap_pct > cfg.max_ext_pct:
-            continue
-        if e.rvol < cfg.rvol_min or (cfg.rvol_max is not None and e.rvol > cfg.rvol_max):
-            continue
-        if e.move_from_open_pct < cfg.min_move_pct:
+        if not _matches(e, cfg):
             continue
         r, _re, _h = simulate_exit(e.entry, e.init_stop, e.prior, e.fwd, cfg.exit_policy, slippage_pct)
         by_day[e.day] = by_day.get(e.day, 0.0) + r
     daily = _daily_returns(by_day)
     skew, kurt = _skew_kurt(daily)
     return skew, kurt, len(daily)
+
+
+# ---- the precomputed eval cache (the live variable editor / "tuner") --------
+#
+# The expensive part of a backtest is the data + per-bar exit simulation. Do it
+# ONCE per session and cache, for every entry event: its features and the
+# forward R under EACH exit policy. Changing any entry filter or exit is then a
+# pure in-memory filter + mean — milliseconds — which is what makes the
+# dashboard's variable editor interactive. (Formerly edge/tuner.py.)
+
+CACHE_POLICIES = [p.name for p in POLICIES]
+
+
+def build_cache(provider: HistoricalProvider, cfg: ScreenConfig,
+                slippage_pct: float = 0.3) -> list[dict]:
+    """One pass over the data → a compact per-event record (features + R under
+    every exit policy)."""
+    events = build_eval_events(provider, cfg, slippage_pct)
+    out = []
+    for e in events:
+        r_by = {}
+        for p in POLICIES:
+            r, _reason, _held = simulate_exit(e.entry, e.init_stop, e.prior, e.fwd, p, slippage_pct)
+            r_by[p.name] = round(r, 4)
+        out.append({"day": e.day, "ext": round(e.ext_vwap_pct, 3), "rvol": round(e.rvol, 3),
+                    "move": round(e.move_from_open_pct, 3), "r": r_by})
+    return out
+
+
+def evaluate_cache(cache: list[dict], *, max_ext: float | None = None, rvol_min: float = 0.0,
+                   rvol_max: float | None = None, min_move: float = 0.0,
+                   exit_policy: str = "pct_trail_10") -> dict:
+    """Score one variable combination against the cache. Instant. Profit factor
+    is capped at 999 (this dict goes straight to JSON; Infinity won't parse)."""
+    rs: list[float] = []
+    by_day: dict[str, float] = {}
+    for e in cache:
+        if max_ext is not None and e["ext"] > max_ext:
+            continue
+        if e["rvol"] < rvol_min:
+            continue
+        if rvol_max is not None and e["rvol"] > rvol_max:
+            continue
+        if e["move"] < min_move:
+            continue
+        r = e["r"].get(exit_policy)
+        if r is None:
+            continue
+        rs.append(r)
+        by_day[e["day"]] = by_day.get(e["day"], 0.0) + r
+    s = score_rs(rs, by_day, min_n=5)
+    if s is None:
+        return {"n": len(rs), "expectancy_r": 0.0, "win_rate": 0.0,
+                "profit_factor": 0.0, "daily_sharpe": 0.0}
+    if s["profit_factor"] == float("inf"):
+        s["profit_factor"] = 999.0
+    return s

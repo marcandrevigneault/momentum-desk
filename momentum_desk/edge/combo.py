@@ -18,8 +18,8 @@ from ..backtest.data import MARKET_OPEN_TOD, HistoricalProvider, MinuteBar, Trad
 from ..backtest.metrics import compute_metrics
 from ..models import Snapshot
 from ..risk import RiskConfig, RiskEngine
-from .exits import simulate_exit_detail, simulate_fade_detail
-from .portfolio import SimTrade, _book_due, _monthly, _policy
+from .exits import get_policy, simulate_exit_detail, simulate_fade_detail
+from .portfolio import SimTrade, _book_due, _monthly
 from .result import AccountRun
 from .screen import ScreenConfig, _find_event, _passes_gate
 
@@ -93,7 +93,7 @@ def _leg_day_pots(leg: ComboLeg, day: str) -> list[tuple]:
     """A leg's potential trades for one day:
     (entry_tod, entry, stop, fill, snap, symbol, leg, side)."""
     screen = ScreenConfig(session=leg.session)
-    policy = _policy(leg.exit_policy)
+    policy = get_policy(leg.exit_policy)
     is_fade = leg.style == "fade"
     side = "short" if is_fade else "long"
     pots = []

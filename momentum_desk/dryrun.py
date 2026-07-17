@@ -10,8 +10,7 @@ exactly what the strategy backtested — now produced the live way.
 """
 from __future__ import annotations
 
-from .edge.exits import ExitPolicy
-from .edge.portfolio import _policy
+from .edge.exits import ExitPolicy, get_policy
 from .edge.screen import ScreenConfig, _passes_gate
 from .edge.strategy import Strategy
 from .live_tracker import EntrySignal, ExitSignal, SymbolTracker
@@ -25,7 +24,7 @@ _COMMISSION_MIN = 1.0
 def strategy_to_engine(strategy: Strategy) -> tuple[ScreenConfig, ExitPolicy]:
     """Lab Strategy → the engine's entry screen + exit policy. Single-leg only
     (the per-symbol engine evaluates one entry/exit stream; combos are out)."""
-    return ScreenConfig(session=strategy.session), _policy(strategy.exit_policy)
+    return ScreenConfig(session=strategy.session), get_policy(strategy.exit_policy)
 
 
 def supported(strategy: Strategy) -> bool:

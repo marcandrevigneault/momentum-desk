@@ -1,8 +1,9 @@
 """Tests for the trade journal: round-trip, enum/dataclass coercion, and that
-the summary matches the underlying backtest."""
+the summary matches the underlying account simulation."""
 from __future__ import annotations
 
-from momentum_desk.backtest import Backtester, SyntheticHistory
+from momentum_desk.backtest import SyntheticHistory
+from momentum_desk.edge.portfolio import run_simulation
 from momentum_desk.journal import Journal, summarize
 from momentum_desk.models import Flag, Signal
 
@@ -28,16 +29,16 @@ def test_signal_with_enum_flags_is_jsonable(tmp_path):
     assert e["flags"] == ["extended_above_vwap"]   # StrEnum coerced to its value
 
 
-def test_summary_matches_backtest(tmp_path):
-    res = Backtester(SyntheticHistory(days=40)).run()
-    j = Journal(tmp_path / "bt.jsonl")
+def test_summary_matches_simulation(tmp_path):
+    res = run_simulation(SyntheticHistory(days=40, session="intraday"))
+    j = Journal(tmp_path / "sim.jsonl")
     for t in res.trades:
         j.log_fill(t)
     s = summarize(j.entries())
-    assert s["fills"] == res.metrics.trades
-    assert s["wins"] == res.metrics.wins
-    assert abs(s["total_pnl"] - res.metrics.total_pnl) < 1.0
-    assert s["win_rate"] == res.metrics.win_rate
+    assert s["fills"] == res.metrics["trades"]
+    assert s["wins"] == res.metrics["wins"]
+    assert abs(s["total_pnl"] - res.metrics["total_pnl"]) < 1.0
+    assert s["win_rate"] == res.metrics["win_rate"]
 
 
 def test_empty_journal_is_safe(tmp_path):
