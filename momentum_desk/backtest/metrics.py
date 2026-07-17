@@ -1,6 +1,6 @@
 """Trade-list → Metrics. The single source of truth for backtest statistics.
 
-Every engine that produces a list of trades + an equity curve (the Backtester,
+Every engine that produces a list of trades + an equity curve (the account
 the account simulator in edge/portfolio.py, the multi-leg combo in edge/combo.py)
 computes its headline stats here, so expectancy/PF/drawdown mean exactly the same
 thing everywhere. Trades only need a ``.pnl`` and an ``.r_multiple``.

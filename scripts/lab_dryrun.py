@@ -22,15 +22,23 @@ def _equity(arg: float | None) -> float:
     if arg is not None:
         return arg
     try:
-        from momentum_desk.broker import IBKRCPBroker
-        b = IBKRCPBroker(gateway_url=os.environ.get("IBKR_GATEWAY_URL", "https://localhost:5000/v1/api"),
-                         account_id=os.environ.get("IBKR_ACCOUNT_ID", ""))
-        b.connect()
-        nav = b.nav()
-        b.disconnect()
+        import asyncio
+
+        from momentum_desk.broker.cp import IBKRClient
+
+        async def _nav() -> float:
+            client = IBKRClient(os.environ.get("IBKR_GATEWAY_URL", "https://localhost:5000/v1/api"),
+                                account_id=os.environ.get("IBKR_ACCOUNT_ID", ""))
+            try:
+                account = await client.resolve_account_id()
+                return float((await client.get_summary(account)).nav)
+            finally:
+                await client.aclose()
+
+        nav = asyncio.run(_nav())
         if nav:
             print(f"  (sizing off live paper NAV ${nav:,.0f})")
-            return float(nav)
+            return nav
     except Exception as e:  # noqa: BLE001
         print(f"  (no gateway NAV: {e}; using fallback equity)")
     return 25_000.0

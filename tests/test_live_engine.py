@@ -1,97 +1,67 @@
-"""Reconciliation proof: the streaming live engine, fed bar-by-bar, reproduces
-the backtester's trades exactly. This is what lets us trust live results against
-the Lab — same entry (_find_event) and same exit (simulate_exit_detail), just
-driven incrementally instead of over a whole day at once.
-
-Run with permissive risk + no capacity cap so every signal becomes a backtest
-trade — isolating the ENTRY/EXIT logic (sizing/concurrency are a separate layer
-the trader applies above the engine, identically to run_simulation).
-"""
+"""The live streaming engine produces exactly the orders the proven dry-run does:
+same trackers, same sizing, same risk rejections — so "what it would trade live"
+equals the Lab backtest, now computed bar-by-bar off candidates + closed bars."""
 from __future__ import annotations
 
+import pytest
+
 from momentum_desk.backtest.providers import SyntheticHistory
-from momentum_desk.edge.portfolio import SimConfig, _policy, run_simulation
-from momentum_desk.edge.screen import ScreenConfig, _passes_gate
-from momentum_desk.live_engine import EntrySignal, ExitSignal, SymbolTracker
-from momentum_desk.risk import RiskConfig
+from momentum_desk.dryrun import dryrun_day
+from momentum_desk.edge.strategy import LegSpec, SizingSpec, Strategy
+from momentum_desk.live_engine import LiveEngine, candidate_from_snapshot
+from momentum_desk.models import Snapshot
 
 
-def _replay_day(provider, day, cfg, policy, slippage):
-    """Feed each gated candidate's bars one at a time through a tracker; collect
-    completed (entry, exit) per symbol."""
-    out = {}
-    for cand in provider.candidates(day):
-        if not _passes_gate(cand, cfg):
-            continue
-        bars = provider.minutes(cand.symbol, day)
-        if not bars:
-            continue
-        t = SymbolTracker(cand, cfg, policy, slippage)
-        entry = exit_ = None
-        for b in bars:
-            sig = t.on_bar(b)
-            if isinstance(sig, EntrySignal):
-                entry = sig
-            elif isinstance(sig, ExitSignal):
-                exit_ = sig
-        if exit_ is None:
-            exit_ = t.end_of_day()
-        if entry and exit_:
-            out[cand.symbol] = (round(entry.entry, 4), round(exit_.exit_price, 4),
-                                exit_.exit_tod, exit_.reason)
-    return out
+def _key(o: dict) -> tuple:
+    return (o["symbol"], o["entry"], o["exit"], o["reason"], o["shares"])
 
 
-def _run(session: str, exit_policy: str):
-    provider = SyntheticHistory(days=60, session=session)
-    cfg = ScreenConfig(session=session)
-    policy = _policy(exit_policy)
-    # backtest: no capacity cap, permissive risk → every signal becomes a trade
-    scfg = SimConfig(session=session, exit_policy=exit_policy, max_concurrent=10_000, max_gross_pct=1e12)
-    risk = RiskConfig(account_equity=1e9, max_pct_of_recent_volume=100.0,
-                      max_position_pct_of_equity=100.0, min_stop_distance_pct=0.0)
-    sim = run_simulation(provider, scfg, risk)
-    bt = {(t["day"], t["symbol"]): (t["entry"], t["exit"], t["exit_tod"], t["exit_reason"])
-          for t in sim.trades}
-    eng = {}
+def test_live_engine_orders_match_dryrun():
+    strat = Strategy(name="x", kind="single", session="intraday", exit_policy="pct_trail_10",
+                     sizing=SizingSpec(mode="fixed", risk_pct=1.0))
+    equity = 25_000.0
+    provider = SyntheticHistory(days=40, session="intraday")
+
+    live_closed = []
     for day in provider.trading_days():
-        for sym, v in _replay_day(provider, day, cfg, policy, scfg.slippage_pct).items():
-            eng[(day, sym)] = v
-    return bt, eng
+        eng = LiveEngine(strat, account_equity=equity, day=day)
+        for cand in provider.candidates(day):
+            eng.register(cand)
+            for bar in provider.minutes(cand.symbol, day):
+                eng.on_bar(cand.symbol, bar)
+        eng.finalize()
+        live_closed.extend(eng.closed)
+        # dry-run for the same day must produce the identical intended orders
+        assert sorted(_key(o) for o in eng.closed) == \
+            sorted(_key(o) for o in dryrun_day(provider, day, strat, account_equity=equity))
+
+    assert len(live_closed) > 15            # the synthetic feed actually trades
 
 
-def test_engine_matches_backtest_intraday_trail():
-    bt, eng = _run("intraday", "pct_trail_10")
-    assert len(bt) > 30                      # the day must actually produce trades
-    assert eng == bt                         # bar-for-bar identical entries + exits
+def test_gate_filters_non_candidates():
+    strat = Strategy(name="x", kind="single", session="premarket", exit_policy="fixed_3r")
+    eng = LiveEngine(strat, account_equity=25_000.0, day="2026-06-16")
+    # premarket gates on the gap; a flat snapshot (open == prev_close) fails it
+    flat = Snapshot(symbol="FLAT", last=10.0, prev_close=10.0, day_open=10.0, vwap=10.0,
+                    cum_volume=1000, avg_volume_20d=1e6)
+    eng.observe(flat)
+    assert "FLAT" not in eng.trackers
+    # a 20% gapper passes
+    gap = Snapshot(symbol="GAP", last=12.0, prev_close=10.0, day_open=12.0, vwap=12.0,
+                   cum_volume=1000, avg_volume_20d=1e6)
+    eng.observe(gap)
+    assert "GAP" in eng.trackers
 
 
-def test_engine_matches_backtest_intraday_fixed_target():
-    bt, eng = _run("intraday", "fixed_3r")
-    assert len(bt) > 30 and eng == bt
+def test_candidate_from_snapshot_carries_context():
+    snap = Snapshot(symbol="AAA", last=5.0, prev_close=4.0, day_open=5.0, vwap=5.0,
+                    cum_volume=1000, avg_volume_20d=2e6, float_shares=8e6)
+    cand = candidate_from_snapshot(snap, "2026-06-16")
+    assert cand.symbol == "AAA" and cand.prev_close == 4.0 and cand.day_open == 5.0
+    assert cand.avg_volume_20d == 2e6 and cand.float_shares == 8e6
 
 
-def test_engine_matches_backtest_premarket():
-    bt, eng = _run("premarket", "pct_trail_10")
-    assert eng == bt
-
-
-def test_tracker_emits_entry_then_exit_in_order():
-    provider = SyntheticHistory(days=10, session="intraday")
-    cfg = ScreenConfig(session="intraday")
-    day = provider.trading_days()[0]
-    seen_entry = False
-    for cand in provider.candidates(day):
-        if not _passes_gate(cand, cfg):
-            continue
-        t = SymbolTracker(cand, cfg, _policy("pct_trail_10"))
-        order = []
-        for b in provider.minutes(cand.symbol, day):
-            sig = t.on_bar(b)
-            if sig:
-                order.append(type(sig).__name__)
-        # an exit never precedes an entry
-        if "ExitSignal" in order:
-            assert order.index("EntrySignal") < order.index("ExitSignal")
-            seen_entry = True
-    assert seen_entry
+def test_multi_leg_strategy_rejected():
+    with pytest.raises(ValueError):
+        LiveEngine(Strategy(name="c", kind="combo", legs=[LegSpec("a", "intraday")]),
+                   account_equity=25_000.0, day="2026-06-16")

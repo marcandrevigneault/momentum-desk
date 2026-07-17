@@ -308,11 +308,13 @@ class IBKRClient:
     async def place_order_with_replies(
         self,
         account_id: str,
-        payload: dict[str, Any],
+        payload: dict[str, Any] | list[dict[str, Any]],
         *,
         auto_ack_messages: set[str] | frozenset[str] | None = None,
     ) -> dict[str, Any]:
-        """Submit an order and walk the reply-confirmation chain.
+        """Submit one order — or a parent+children list (e.g. entry + protective
+        stop referencing the parent's cOID) — and walk the reply-confirmation
+        chain.
 
         IBKR may respond with warning objects ``{"id": "<replyId>",
         "message": ["..."], ...}``. For each warning matching the allowlist we
@@ -321,8 +323,9 @@ class IBKRClient:
         """
         await self._ensure_authenticated()
         allowlist = {m.lower() for m in (auto_ack_messages or DEFAULT_AUTO_ACK_MESSAGES)}
+        orders = payload if isinstance(payload, list) else [payload]
         resp = await self._request(
-            "POST", f"/iserver/account/{account_id}/orders", json={"orders": [payload]}
+            "POST", f"/iserver/account/{account_id}/orders", json={"orders": orders}
         )
         data = resp.json()
 

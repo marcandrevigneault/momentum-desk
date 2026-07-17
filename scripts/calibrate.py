@@ -15,7 +15,7 @@ import datetime as dt
 import os
 from pathlib import Path
 
-from momentum_desk.backtest.http import CachedClient
+from momentum_desk.backtest.client import CachedClient
 
 KEY = os.environ["POLYGON_API_KEY"]
 client = CachedClient("https://api.polygon.io", KEY, cache_dir="data/cache/polygon", max_per_min=0)

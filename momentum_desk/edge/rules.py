@@ -14,10 +14,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..backtest.data import HistoricalProvider
-from .exits import POLICIES, ExitPolicy, simulate_exit
-from .optimize import EvalEvent, build_eval_events
+from .exits import get_policy, simulate_exit
+from .optimize import EvalEvent, build_eval_events, score_rs
 from .screen import ScreenConfig
-from .stats import _sharpe
 
 _OPS = {
     "<": lambda a, b: a < b,
@@ -72,31 +71,19 @@ class RuleResult:
     daily_sharpe: float
 
 
-def _policy(name: str) -> ExitPolicy:
-    return next((p for p in POLICIES if p.name == name), POLICIES[1])
-
-
 def run_ruleset(events: list[EvalEvent], rs: RuleSet, slippage_pct: float = 0.3) -> RuleResult:
-    policy = _policy(rs.exit_policy)
-    rs_events = [e for e in events if rs.matches(e)]
+    policy = get_policy(rs.exit_policy)
     rs_list, by_day = [], {}
-    for e in rs_events:
+    for e in (e for e in events if rs.matches(e)):
         r, _reason, _held = simulate_exit(e.entry, e.init_stop, e.prior, e.fwd, policy, slippage_pct)
         rs_list.append(r)
         by_day[e.day] = by_day.get(e.day, 0.0) + r
-    if len(rs_list) < 10:
+    s = score_rs(rs_list, by_day, min_n=10)
+    if s is None:
         return RuleResult(rs.name, rs.rule_label(), rs.exit_policy, len(rs_list), 0.0, 0.0, 0.0, 0.0)
-    wins = [x for x in rs_list if x > 0]
-    losses = [x for x in rs_list if x <= 0]
-    gp, gl = sum(wins), -sum(losses)
-    daily = [by_day[d] for d in sorted(by_day)]
-    return RuleResult(
-        name=rs.name, rule=rs.rule_label(), exit_policy=rs.exit_policy, n=len(rs_list),
-        expectancy_r=round(sum(rs_list) / len(rs_list), 4),
-        win_rate=round(len(wins) / len(rs_list), 4),
-        profit_factor=round(gp / gl, 3) if gl > 0 else float("inf"),
-        daily_sharpe=round(_sharpe(daily), 4),
-    )
+    return RuleResult(name=rs.name, rule=rs.rule_label(), exit_policy=rs.exit_policy,
+                      n=s["n"], expectancy_r=s["expectancy_r"], win_rate=s["win_rate"],
+                      profit_factor=s["profit_factor"], daily_sharpe=s["daily_sharpe"])
 
 
 # Demonstration presets — same entries, different AND/OR rules + exits.

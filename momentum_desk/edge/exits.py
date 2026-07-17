@@ -17,6 +17,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from ..backtest.data import HistoricalProvider, MinuteBar
+from .features import _atr
 from .screen import ScreenConfig, _find_event, _passes_gate
 
 
@@ -73,12 +74,14 @@ class ExitLabResult:
     policies: list[ExitMetrics] = field(default_factory=list)
 
 
-def _atr(bars: list[MinuteBar]) -> float:
-    if len(bars) < 2:
-        return 0.0
-    trs = [max(bars[i].h - bars[i].l, abs(bars[i].h - bars[i - 1].c), abs(bars[i].l - bars[i - 1].c))
-           for i in range(1, len(bars))]
-    return sum(trs) / len(trs) if trs else 0.0
+def get_policy(name: str) -> ExitPolicy:
+    """THE policy lookup — unknown names raise. (Two lookups used to coexist:
+    one raised, one silently fell back to pct_trail_10, so a typo'd policy name
+    could quietly score as the wrong exit.)"""
+    for p in POLICIES:
+        if p.name == name:
+            return p
+    raise ValueError(f"unknown exit policy {name!r}")
 
 
 @dataclass
@@ -100,7 +103,7 @@ def simulate_exit_detail(
         return ExitFill(0.0, "void", 0, entry, fwd[0].tod if fwd else 0)
     slip = slippage_pct / 100.0
     target = entry + policy.target_r * risk if policy.target_r is not None else None
-    atr = _atr(prior_bars[-14:]) if policy.trail_kind == "atr" else 0.0
+    atr = (_atr(prior_bars[-14:]) or 0.0) if policy.trail_kind == "atr" else 0.0
     high_water = entry  # as of the *prior* bar — updated at each bar's close
 
     def fill(px: float, reason: str, b: MinuteBar, i: int) -> ExitFill:
@@ -156,7 +159,7 @@ def simulate_fade_detail(
         return ExitFill(0.0, "void", 0, entry, fwd[0].tod if fwd else 0)
     slip = slippage_pct / 100.0
     target = entry - policy.target_r * risk if policy.target_r is not None else None
-    atr = _atr(prior_bars[-14:]) if policy.trail_kind == "atr" else 0.0
+    atr = (_atr(prior_bars[-14:]) or 0.0) if policy.trail_kind == "atr" else 0.0
     low_water = entry  # best (lowest) price seen, updated at each bar's close
 
     def fill(px: float, reason: str, b: MinuteBar, i: int) -> ExitFill:

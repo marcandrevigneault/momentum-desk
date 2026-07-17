@@ -11,8 +11,8 @@ import os
 from pathlib import Path
 
 from momentum_desk.backtest.providers import PolygonHistory, SyntheticHistory
+from momentum_desk.edge.optimize import CACHE_POLICIES, build_cache
 from momentum_desk.edge.screen import ScreenConfig
-from momentum_desk.edge.tuner import CACHE_POLICIES, build_cache
 
 
 def _prov(data, session, days):

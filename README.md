@@ -1,18 +1,19 @@
 # Momentum Desk
 
-A fast low-float momentum **scanner** with a **mechanical risk engine**, built
-**paper-first**, designed to connect to Interactive Brokers. It scans for the
-documented Warrior-style setup — low float + high relative volume + a news
-catalyst in a tradable price band — and, just as importantly, refuses to let
-you chase the part of a move where you become *exit liquidity*.
+A low-float momentum **research platform and trading desk**, built
+**paper-first**, connected to Interactive Brokers. Strategies are validated in
+the Strategy Lab (feature screens, exit-policy lab, an anti-self-deception
+gauntlet, full account simulation) and the exact same entry/exit code is then
+replayed on the live tape by the reconciled engine — so what you validated is
+what you trade.
 
 ```bash
 # 1) console demo — no install, no credentials (mock data)
 python -m momentum_desk.cli
 
-# 2) live web dashboard (two terminals)
+# 2) dashboard (two terminals)
 python -m venv .venv && . .venv/bin/activate
-pip install fastapi "uvicorn[standard]" pyyaml
+pip install -e . && pip install fastapi "uvicorn[standard]" pyyaml
 uvicorn momentum_desk.server:app --port 8000      # backend (mock feed by default)
 
 cd web && npm install && npm run dev               # dashboard → http://localhost:5180
@@ -20,13 +21,8 @@ cd web && npm install && npm run dev               # dashboard → http://localh
 
 To use real data: copy `config.example.yaml` to `config.yaml`, set
 `data_feed: polygon` and your `polygon_api_key`, and restart the backend.
-
-```bash
-# 3) backtest — does the rule set survive fees + slippage? (synthetic, no key)
-python -m momentum_desk.backtest.cli --days 40
-python -m momentum_desk.backtest.cli --target-r 3 --slippage-pct 0.3   # stress it
-POLYGON_API_KEY=... python -m momentum_desk.backtest.cli --polygon --days 30  # real history
-```
+A misconfigured feed now **fails loudly** — the desk refuses to start rather
+than silently serving synthetic data.
 
 ---
 
@@ -62,73 +58,82 @@ until a rule set is proven, and never risk money you can't lose.**
 ## How it works
 
 ```
-data feed → scanner (filters + flags + score) → risk engine (sizing + guards) → you → IBKR (paper)
-   ▲                                                                                      
-   └── pluggable: mock today; polygon / finnhub / ibkr next
+                     ┌── RESEARCH (offline, Strategy Lab) ─────────────────────┐
+                     │ feature screen → exit lab → rules/optimize → gauntlet   │
+                     │ → account sim (portfolio/combo) → SQLite leaderboard    │
+                     └───────────────────────────┬─────────────────────────────┘
+                                                 │ ★ active Strategy
+data feed → Snapshot ─┬─> scanner (flags+score) ─┼─> Cockpit (display + paper practice)
+                      │                          │
+                      └─> minute bars ─> reconciled engine (same edge code, live)
+                                          → RiskEngine sizing → decide() guards
+                                          → IBKR paper: MKT entry + resting STP stop
 ```
 
-- **`models.py`** — `Snapshot` in, `Signal` out; derived metrics (gap %, RVOL,
-  extension above VWAP, float).
-- **`adapters/`** — `MarketDataAdapter` protocol + a `MockReplayAdapter` that
-  simulates a morning of low-float gappers so everything runs with no feed.
-- **`scanner.py`** — candidate filters (price band, low float, RVOL, gap, news)
-  plus **anti-chase flags**: `EXTENDED` (too far above VWAP), `HALTED`,
-  `UNKNOWN_FLOAT`. Ranks fresh setups above chased ones.
-- **`risk.py`** — sizes every trade from its **stop** (never guessed), enforces
-  a **daily-loss circuit breaker**, a per-trade risk cap, a position cap, and
-  the **liquidity guard** ("you would be the liquidity: your size > 1% of
-  today's volume").
-- **`cli.py`** — console demo of the full pipeline.
+Two pipelines share the feed and the risk engine, with different jobs:
 
-In the demo you can watch a runner flip from actionable (`✓`) to
-`EXTENDED — don't chase` (`·`) as it stretches above VWAP. That flip is the
-whole point.
+- **Cockpit (display + practice).** `scanner.py` filters Snapshots into the
+  low-float / RVOL / gap / news band with **anti-chase flags** (`EXTENDED`,
+  `HALTED`, `UNKNOWN_FLOAT`); `paper.py` is a simulated practice desk with a
+  trailing stop. Nothing here ever reaches a broker — it's the market view.
+- **The reconciled engine (the trading path).** `live_tracker.SymbolTracker`
+  replays the *exact* backtest entry (`edge/screen._find_event`) and exit
+  (`edge/exits.simulate_exit_detail`) bar-by-bar on the live tape, sized by the
+  same `RiskEngine`. Backtest and live agree by construction (`test_live_tracker`).
+- **Transmission (`live_transmit.py`).** Armed entries go out as a market
+  parent **plus a broker-resident protective stop child** in one submission —
+  if the desk dies mid-hold, the stop is already resting at IBKR. Exits cancel
+  the stop and close only while the broker still holds the symbol. Arming
+  requires `LIVE_ENGINE_ENABLED` + `IBKR_ENABLED` + `LIVE_TRADING=armed`, and a
+  paper (DU*) account is re-asserted on every transmit.
+- **The journal (`journal.py`).** Every engine intent, transmit decision, and
+  order outcome is appended to `journal/live-<day>.jsonl` — dry-run days
+  included. Review a session with `python -m momentum_desk.journal <file>`.
 
-## Where a real edge might live (and where it doesn't)
+## The Strategy Lab (research)
 
-- **Anti-chase first.** Most blow-ups are buying a stock already up 150%. The
-  extension-above-VWAP guard is the highest-value rule here.
-- **Exits and sizing, not entries.** The "algorithm in his head" is mostly cut
-  losers fast, size by stop distance, let a few winners pay for many losers.
-- **First hour + catalyst.** Most of these moves are 9:30–10:30 ET on news.
-- **Liquidity reality.** On a thin $2 name your market order moves the print.
-- **Honesty about expectancy.** Most "obvious" momentum rules are negative after
-  slippage. The point of the (planned) backtester is to *find out* on history,
-  not with your account.
+Everything under `momentum_desk/edge/` exists to answer one question honestly:
+*where is the edge, and does it survive scrutiny?* (Design doc:
+`docs/EDGE_PLATFORM.md`.)
 
-## Roadmap
+- **`screen.py`** — per-feature information coefficients + decile lift, with
+  the discretionary filters *recorded as features rather than applied*.
+- **`exits.py`** — the same entries through 9 exit policies, compared in R.
+- **`optimize.py`** — grid search over entry filters × exits, plus the cached
+  instant evaluator behind the dashboard's Tuner tab. Every search winner is
+  **deflated** (`stats.deflate_best`) against the number of trials.
+- **`gauntlet.py`** — bootstrap CIs, deflated Sharpe, purged walk-forward with
+  selection, regime breakdown, untouched holdout → SURVIVES / FRAGILE / REJECTED.
+- **`portfolio.py` / `combo.py`** — full account simulation (sizing, capacity,
+  slippage, daily-loss breaker) for single and multi-leg strategies.
+- **`store.py` / `lab.py`** — strategies + runs in SQLite (`data/lab.db`),
+  ranked on the dashboard leaderboard; the ★ active strategy is what the live
+  engine runs. Re-run any strategy from the leaderboard's re-run button or
+  `POST /api/lab/run`.
 
-- [x] Core models, pluggable data adapter, mock feed
-- [x] Scanner with anti-chase flags + scoring
-- [x] Mechanical risk engine (sizing, daily stop, liquidity guard)
-- [x] Real-time web dashboard (WebSocket streaming table, React + Vite)
-- [x] Real market data adapter — polygon.io (key-gated; falls back to mock)
-- [x] Backtester — opening-range-breakout on scanner candidates, honest fills
-      (adverse slippage both sides, commissions, pessimistic same-bar stops,
-      daily-loss breaker), expectancy report; synthetic + polygon history
-- [ ] IBKR connection — **paper account first** (quotes, then order routing)
-- [ ] Trade journal (every signal, decision, and fill logged for review)
+Honesty is enforced in the fills: no lookahead, adverse slippage on entries and
+exits, and when a bar touches both stop and target the **stop fills first**.
+Synthetic data proves only that the machinery computes; real conclusions come
+from Polygon history (cached under `data/cache/polygon/`). Known methodological
+limits are tracked in `docs/EDGE_PLATFORM.md` and affect magnitude, not
+direction.
 
-### Backtester — how to read it, and what it can't tell you
+## Status
 
-The engine reuses the live `ScanConfig` and `RiskEngine`, so a backtest
-validates the *same* logic the desk would trade. It reports win rate, avg
-win/loss, profit factor, expectancy (\$ and **R** per trade), total P&L, and max
-drawdown. **R/trade** is the number that matters — positive expectancy after
-costs is the whole question.
-
-Honesty is enforced in the fills: no lookahead, adverse slippage on every entry
-*and* exit, commissions both sides, and when a bar touches both stop and target
-the **stop is assumed to fill first**. Even so:
-
-- **Synthetic data proves nothing about the strategy** — the prices are made up.
-  It only proves the engine computes correctly. Use `--polygon` for real numbers.
-- Real low-float slippage is *worse* than any fixed model — your size moves thin
-  books. Past expectancy is not future profit.
-- Survivorship and point-in-time gaps (news/float backfill) are documented in
-  `backtest/providers.py`; treat polygon results as indicative, not gospel.
+- [x] Scanner + anti-chase flags, mechanical risk engine, WebSocket dashboard
+- [x] Edge platform: screen, exit lab, optimizer/tuner/rules, gauntlet, account sim
+- [x] Strategy Lab: SQLite store, leaderboard, activate/rename/re-run
+- [x] Reconciled live engine on the real tape (dry-run by default)
+- [x] IBKR Client Portal connection: NAV/positions read + **armable paper
+      transmission with broker-resident protective stops** (flag-gated)
+- [x] Trade journal wired into the armed path (signals, decisions, fills)
+- [ ] Fill reconciliation: mark journal fills against actual IBKR executions
+- [ ] Halt/LULD modeling in the backtest fills
 
 ## Safety defaults
 
-`mode: paper` and `data_feed: mock` ship as defaults. Credentials live only in
-`config.yaml`, which is gitignored. Going live is a deliberate, explicit switch.
+`mode: paper` and `data_feed: mock` ship as defaults; credentials live only in
+`config.yaml` (gitignored) or env secrets. Real transmission needs three
+explicit flags, re-asserts a paper (DU) account on every drain, sends **no
+entry without a stop**, and trips a daily-loss breaker that halts new entries
+while still allowing exits. Going live remains a deliberate, explicit switch.

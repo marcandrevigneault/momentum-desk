@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { getLiveIntent, type LiveCandidate, type LiveIntent } from "../api";
+import { type LiveCandidate } from "../api";
+import { useLiveIntent } from "../useLiveIntent";
 
 const money = (v: number) => (v ?? 0).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const money2 = (v: number) => (v ?? 0).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -40,14 +40,7 @@ function CandidateRow({ c }: { c: LiveCandidate }) {
 }
 
 export default function EnginePage() {
-  const [li, setLi] = useState<LiveIntent | null>(null);
-  useEffect(() => {
-    let on = true;
-    const tick = () => getLiveIntent().then((r) => on && setLi(r)).catch(() => {});
-    tick();
-    const id = setInterval(tick, 6000);
-    return () => { on = false; clearInterval(id); };
-  }, []);
+  const li = useLiveIntent();
 
   if (!li) return <div className="p-6 text-[13px]" style={{ color: "var(--muted)" }}>loading engine…</div>;
   if (!li.available) {

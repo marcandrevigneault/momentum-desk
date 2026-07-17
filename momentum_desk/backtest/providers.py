@@ -14,8 +14,8 @@ import datetime as dt
 import random
 from zoneinfo import ZoneInfo
 
+from .client import CachedClient
 from .data import MARKET_OPEN_TOD, PREMARKET_OPEN_TOD, DayCandidate, MinuteBar
-from .http import CachedClient
 
 _ET = ZoneInfo("America/New_York")
 

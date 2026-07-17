@@ -100,3 +100,16 @@ def _expected_max_sharpe(trial_sr_var: float, n_trials: int) -> float:
     z1 = _norm_ppf(1.0 - 1.0 / n_trials)
     z2 = _norm_ppf(1.0 - 1.0 / (n_trials * math.e))
     return sd * ((1.0 - _EULER) * z1 + _EULER * z2)
+
+
+def deflate_best(best_sharpe: float, trial_sharpes: list[float], n_trials: int,
+                 n_obs: int, skew: float, kurt: float) -> tuple[float, float]:
+    """The multiple-testing bar for the winner of a search: SR* = E[max Sharpe]
+    over ``n_trials`` zero-skill trials (variance from the observed spread of
+    trial Sharpes), and DSR = P(true Sharpe > SR*) given the winner's sample
+    moments. THE one deflation implementation — the gauntlet and the optimizer
+    must deflate identically or their verdicts can't be compared."""
+    sr_var = _std(trial_sharpes, ddof=0) ** 2 if len(trial_sharpes) > 1 else 0.0
+    sr_star = round(_expected_max_sharpe(sr_var, n_trials), 4)
+    dsr = round(_psr(best_sharpe, sr_star, n_obs, skew, kurt), 4)
+    return sr_star, dsr

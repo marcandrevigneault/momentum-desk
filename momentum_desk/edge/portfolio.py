@@ -22,7 +22,7 @@ from ..backtest.data import Trade
 from ..backtest.metrics import compute_metrics
 from ..models import Snapshot
 from ..risk import RiskConfig, RiskEngine
-from .exits import POLICIES, ExitPolicy, simulate_exit_detail
+from .exits import get_policy, simulate_exit_detail
 from .result import AccountRun
 from .screen import ScreenConfig, _find_event, _passes_gate
 
@@ -71,11 +71,6 @@ class SimResult(AccountRun):
     exit_policy: str = ""
 
 
-def _policy(name: str) -> ExitPolicy:
-    for p in POLICIES:
-        if p.name == name:
-            return p
-    raise ValueError(f"unknown exit policy {name!r}")
 
 
 def _monthly(trades: list[SimTrade]) -> list[dict]:
@@ -106,7 +101,7 @@ def run_simulation(provider, scfg: SimConfig | None = None,
                    risk_cfg: RiskConfig | None = None) -> SimResult:
     scfg = scfg or SimConfig()
     risk_cfg = risk_cfg or RiskConfig()
-    policy = _policy(scfg.exit_policy)
+    policy = get_policy(scfg.exit_policy)
     screen = ScreenConfig(session=scfg.session)
 
     risk = RiskEngine(risk_cfg)

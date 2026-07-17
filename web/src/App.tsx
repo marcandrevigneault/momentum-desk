@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { getLiveIntent, type LiveIntent } from "./api";
+import { useState } from "react";
+import { useLiveIntent } from "./useLiveIntent";
 import LabPage from "./pages/LabPage";
 import CockpitPage from "./pages/CockpitPage";
 import EnginePage from "./pages/EnginePage";
@@ -8,14 +8,7 @@ const money = (v: number) => (v ?? 0).toLocaleString("en-US", { style: "currency
 
 /** Always-visible running P&L for today's live engine, on every page. */
 function TodayPnl() {
-  const [li, setLi] = useState<LiveIntent | null>(null);
-  useEffect(() => {
-    let on = true;
-    const tick = () => getLiveIntent().then((r) => on && setLi(r)).catch(() => {});
-    tick();
-    const id = setInterval(tick, 8000);
-    return () => { on = false; clearInterval(id); };
-  }, []);
+  const li = useLiveIntent();
   if (!li?.available) return null;
   const pnl = li.day_pnl ?? 0;
   const c = pnl >= 0 ? "var(--green)" : "var(--red)";

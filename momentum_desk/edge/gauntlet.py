@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from ..backtest.data import HistoricalProvider
 from .exits import POLICIES, ExitPolicy, simulate_exit
 from .screen import ScreenConfig, iter_entry_events
-from .stats import _expected_max_sharpe, _mean, _psr, _sharpe, _skew_kurt, _std
+from .stats import _mean, _psr, _sharpe, _skew_kurt, deflate_best
 
 # ---- strategy trades -------------------------------------------------------
 
@@ -221,13 +221,12 @@ def run_gauntlet(
     # bootstrap
     res.boot_lo, res.boot_hi, res.boot_p_pos = _bootstrap(trades, n_boot)
 
-    # deflated sharpe
+    # deflated sharpe — the same stats.deflate_best the optimizer uses
     trial_srs = [_sharpe(_daily(t)[1]) for t in trades_by_policy.values() if len(_daily(t)[1]) > 2]
     res.n_trials = n_trials or len(trials)
-    sr_var = _std(trial_srs, ddof=0) ** 2 if len(trial_srs) > 1 else 0.0
-    res.sr_star = round(_expected_max_sharpe(sr_var, res.n_trials), 4)
     res.psr = round(_psr(res.sharpe_daily, 0.0, res.n_days, res.skew, res.kurt), 4)
-    res.dsr = round(_psr(res.sharpe_daily, res.sr_star, res.n_days, res.skew, res.kurt), 4)
+    res.sr_star, res.dsr = deflate_best(res.sharpe_daily, trial_srs, res.n_trials,
+                                        res.n_days, res.skew, res.kurt)
 
     # walk-forward with selection
     res.folds, res.wf_oos_exp, res.wf_pos_folds = _walk_forward(trades_by_policy, days, k_folds, embargo_days)

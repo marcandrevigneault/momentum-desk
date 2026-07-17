@@ -6,7 +6,6 @@ scanner's anti-chase flags, and the backtest metrics math.
 """
 from __future__ import annotations
 
-from momentum_desk.backtest import BacktestConfig, Backtester, SyntheticHistory
 from momentum_desk.models import Flag, Snapshot
 from momentum_desk.risk import RiskConfig, RiskEngine
 from momentum_desk.scanner import ScanConfig, ScannerEngine
@@ -71,21 +70,3 @@ def test_scanner_rejects_high_float():
     sc = ScannerEngine(ScanConfig(max_float_millions=20, min_gap_pct=5,
                                   min_relative_volume=2, require_news=False))
     assert sc.evaluate(_snap(float_shares=50e6)) is None
-
-
-# ---------------- backtest metrics ----------------
-def test_backtest_runs_and_metrics_are_consistent():
-    res = Backtester(SyntheticHistory(days=40)).run()
-    m = res.metrics
-    assert m.trades > 0
-    assert m.wins + m.losses == m.trades
-    assert abs(sum(t.pnl for t in res.trades) - m.total_pnl) < 1.0
-    # equity curve starts at starting equity and moves by trade pnl
-    assert res.equity_curve[0] == res.starting_equity
-    assert abs(res.equity_curve[-1] - (res.starting_equity + m.total_pnl)) < 1.0
-
-
-def test_more_slippage_never_helps():
-    low = Backtester(SyntheticHistory(days=40), bt=BacktestConfig(slippage_pct=0.1)).run()
-    high = Backtester(SyntheticHistory(days=40), bt=BacktestConfig(slippage_pct=0.5)).run()
-    assert high.metrics.total_pnl <= low.metrics.total_pnl
