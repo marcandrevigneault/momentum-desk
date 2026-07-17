@@ -37,15 +37,27 @@ def main() -> None:
         strategies = [s for s in strategies if s.name == args.only]
     windows = [w.strip() for w in args.windows.split(",") if w.strip()]
 
+    # resume support: skip pairs already refreshed today (a killed sweep can be
+    # relaunched and it picks up where it stopped — runs are idempotent)
+    today = time.strftime("%Y-%m-%d")
+    fresh: set[tuple[str, str]] = set()
+    for window in windows:
+        for row in store.leaderboard(window=window, limit=10_000):
+            if str(row.get("generated", "")).startswith(today):
+                fresh.add((row["strategy"], window))
+
     total = len(strategies) * len(windows)
     done = 0
     print(f"[refresh] {len(strategies)} strategies x {windows} -> {total} runs "
-          f"(db={args.db})", flush=True)
+          f"({len(fresh)} already fresh today, db={args.db})", flush=True)
     t0 = time.time()
     for window in windows:              # all 1y first: fast feedback, then the 5y grind
         for strat in strategies:
             done += 1
             tag = f"[{done}/{total}] {strat.name} · {window}"
+            if (strat.name, window) in fresh:
+                print(f"{tag}: already refreshed today — skipped", flush=True)
+                continue
             try:
                 t1 = time.time()
                 result = run_only(strat, window=window, data_source="polygon")
