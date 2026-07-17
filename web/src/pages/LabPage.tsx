@@ -96,7 +96,6 @@ function LeaderboardTab() {
   const makeActive = async (e: any, name: string) => { e.stopPropagation(); await setLabActive(name); setActive(name); };
 
   const sel = selected?.result;
-  const m = sel?.metrics ?? {};
   const strat = strategies.find((s) => s.name === selected?.strategy) ?? null;
   const [rename, setRename] = useState("");
 
@@ -120,6 +119,53 @@ function LeaderboardTab() {
       setRunning(false);
     }
   };
+
+  // date-range scrubber: recompute everything below from the stored run,
+  // client-side, as the thumbs move — no server round-trip, instant
+  const dailyEq = ((sel?.daily_equity ?? []) as { date: string; equity: number }[]);
+  const [range, setRange] = useState<[number, number]>([0, 0]);
+  useEffect(() => { setRange([0, Math.max(0, dailyEq.length - 1)]); }, [selected?.id, dailyEq.length]);
+  const [lo, hi] = range;
+  const loDate = dailyEq[lo]?.date, hiDate = dailyEq[hi]?.date;
+  const windowed = dailyEq.length > 1 && (lo > 0 || hi < dailyEq.length - 1);
+
+  const view = sel ? (() => {
+    const allTrades = (sel.trades ?? []) as any[];
+    if (!windowed) {
+      return { trades: allTrades, metrics: sel.metrics ?? {}, curve: sel.equity_curve ?? [],
+               monthly: sel.monthly ?? [], endEquity: sel.final_equity };
+    }
+    const trades = allTrades.filter((x) => x.day >= loDate && x.day <= hiDate);
+    const eq = dailyEq.slice(lo, hi + 1).map((d) => d.equity);
+    const start = lo > 0 ? dailyEq[lo - 1].equity : sel.starting_equity;
+    const pnl = trades.reduce((s, x) => s + (x.pnl ?? 0), 0);
+    const wins = trades.filter((x) => (x.pnl ?? 0) > 0);
+    const gp = wins.reduce((s, x) => s + x.pnl, 0);
+    const gl = -trades.filter((x) => (x.pnl ?? 0) <= 0).reduce((s, x) => s + x.pnl, 0);
+    let peak = start, dd = 0;
+    for (const v of [start, ...eq]) { peak = Math.max(peak, v); if (peak > 0) dd = Math.max(dd, (100 * (peak - v)) / peak); }
+    const byM: Record<string, any[]> = {};
+    trades.forEach((x) => { (byM[x.day.slice(0, 7)] ??= []).push(x); });
+    let cum = 0;
+    const monthly = Object.keys(byM).sort().map((mo) => {
+      const ts = byM[mo]; const mp = ts.reduce((s, x) => s + x.pnl, 0); cum += mp;
+      const w = ts.filter((x) => x.pnl > 0).length;
+      return { period: mo, trades: ts.length, wins: w, win_rate: Math.round((1000 * w) / ts.length) / 10,
+               pnl: Math.round(mp * 100) / 100, cum_pnl: Math.round(cum * 100) / 100 };
+    });
+    return {
+      trades, curve: [start, ...eq], monthly, endEquity: start + pnl,
+      metrics: {
+        trades: trades.length,
+        win_rate: trades.length ? (100 * wins.length) / trades.length : 0,
+        expectancy_r: trades.length ? trades.reduce((s, x) => s + (x.r_multiple ?? 0), 0) / trades.length : 0,
+        profit_factor: gl > 0 ? gp / gl : gp > 0 ? 999 : 0,
+        return_pct: start > 0 ? (100 * pnl) / start : 0,
+        max_drawdown_pct: dd,
+      },
+    };
+  })() : null;
+  const vm = (view?.metrics ?? {}) as Record<string, number>;
 
   return (
     <div className="h-full overflow-auto p-4 flex flex-col gap-4">
@@ -216,6 +262,32 @@ function LeaderboardTab() {
               title="back to the strategy list">✕ close</button>
           </div>
 
+          {/* window scrubber — drag to view any sub-period; everything below live-updates */}
+          {dailyEq.length > 2 && view && (
+            <div className="rounded-lg px-3 py-2 flex flex-col gap-1.5" style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}>
+              <div className="flex items-center gap-2 text-[11px] flex-wrap">
+                <span className="font-semibold">Window</span>
+                <span className="mono">{loDate} → {hiDate}</span>
+                <span style={{ color: "var(--muted)" }}>· {view.trades.length} trades · {hi - lo + 1} sessions</span>
+                {windowed && (
+                  <button onClick={() => setRange([0, dailyEq.length - 1])}
+                    className="mono text-[10px] px-1.5 py-0.5 rounded"
+                    style={{ border: "1px solid var(--line)", color: "var(--muted)" }}>reset to full</button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="mono text-[10px] w-8 shrink-0" style={{ color: "var(--muted)" }}>start</span>
+                <input type="range" min={0} max={dailyEq.length - 1} value={lo} className="w-full"
+                  onChange={(e) => setRange([Math.min(+e.target.value, hi), hi])} />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="mono text-[10px] w-8 shrink-0" style={{ color: "var(--muted)" }}>end</span>
+                <input type="range" min={0} max={dailyEq.length - 1} value={hi} className="w-full"
+                  onChange={(e) => setRange([lo, Math.max(+e.target.value, lo)])} />
+              </div>
+            </div>
+          )}
+
           {/* live dry-run preview — what the reconciled engine would trade */}
           {dry && dry.available && dry.day && (
             <div className="rounded-lg px-3 py-2 text-[11px]" style={{ background: "var(--panel-2)", border: "1px dashed var(--green)" }}>
@@ -281,15 +353,15 @@ function LeaderboardTab() {
 
           {/* headline metrics */}
           <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))" }}>
-            <Stat label="Final equity" value={money(sel.final_equity)} />
-            <Stat label="Return" value={`${(m.return_pct ?? 0).toFixed(0)}%`} color={rColor(m.return_pct ?? 0)} />
-            <Stat label="Expectancy R" value={(m.expectancy_r ?? 0).toFixed(3)} color={rColor(m.expectancy_r ?? 0)} />
-            <Stat label="Profit factor" value={(m.profit_factor ?? 0).toFixed(2)} />
-            <Stat label="Win rate" value={`${(m.win_rate ?? 0).toFixed(1)}%`} />
-            <Stat label="Max DD" value={`${(m.max_drawdown_pct ?? 0).toFixed(1)}%`} color="var(--red)" />
-            <Stat label="Trades" value={String(m.trades ?? 0)} />
+            <Stat label={windowed ? "End equity (window)" : "Final equity"} value={money(view!.endEquity)} />
+            <Stat label="Return" value={`${(vm.return_pct ?? 0).toFixed(0)}%`} color={rColor(vm.return_pct ?? 0)} />
+            <Stat label="Expectancy R" value={(vm.expectancy_r ?? 0).toFixed(3)} color={rColor(vm.expectancy_r ?? 0)} />
+            <Stat label="Profit factor" value={(vm.profit_factor ?? 0).toFixed(2)} />
+            <Stat label="Win rate" value={`${(vm.win_rate ?? 0).toFixed(1)}%`} />
+            <Stat label="Max DD" value={`${(vm.max_drawdown_pct ?? 0).toFixed(1)}%`} color="var(--red)" />
+            <Stat label="Trades" value={String(vm.trades ?? 0)} />
           </div>
-          <Spark curve={sel.equity_curve ?? []} />
+          <Spark curve={view!.curve} />
 
           {/* month-to-month + trade log, side by side on wide screens */}
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
@@ -301,7 +373,7 @@ function LeaderboardTab() {
                   <th className="px-2 py-1 font-medium mono">win%</th><th className="px-2 py-1 font-medium mono">P&amp;L</th>
                   <th className="px-2 py-1 font-medium mono">cum</th></tr></thead>
                 <tbody>
-                  {(sel.monthly ?? []).map((r: any) => (
+                  {(view!.monthly as any[]).map((r: any) => (
                     <tr key={r.period} onClick={() => setMonthFilter(monthFilter === r.period ? null : r.period)}
                       className="cursor-pointer"
                       style={{ borderTop: "1px solid var(--line)", background: monthFilter === r.period ? "var(--panel-2)" : undefined }}
@@ -318,7 +390,7 @@ function LeaderboardTab() {
             </div>
             <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: "1px solid var(--line)", maxHeight: 340 }}>
               {(() => {
-                const all = (sel.trades ?? []) as any[];
+                const all = view!.trades as any[];
                 const filtered = monthFilter ? all.filter((t) => (t.day ?? "").startsWith(monthFilter)) : all;
                 const shown = filtered.slice(-500).reverse();   // cap rendered rows; newest first
                 return (<>
