@@ -13,8 +13,8 @@ export async function closeTrade(symbol: string): Promise<{ ok: boolean; pnl?: n
   return r.json();
 }
 
-export async function getBars(symbol: string, tf: string): Promise<import("./types").Candle[]> {
-  const r = await fetch(`/api/bars/${symbol}?tf=${tf}`);
+export async function getBars(symbol: string, tf: string, day?: string): Promise<import("./types").Candle[]> {
+  const r = await fetch(`/api/bars/${symbol}?tf=${tf}${day ? `&day=${day}` : ""}`);
   return (await r.json()).candles ?? [];
 }
 

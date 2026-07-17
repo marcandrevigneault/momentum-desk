@@ -645,10 +645,13 @@ def _polygon_key() -> str:
 
 
 @app.get("/api/bars/{symbol}")
-async def bars(symbol: str, tf: str = "1m") -> dict:
+async def bars(symbol: str, tf: str = "1m", day: str = "") -> dict:
     """Real OHLC candles from Polygon for the chart — proper history on click
-    instead of waiting for the slow live stream to accumulate points."""
+    instead of waiting for the slow live stream to accumulate points. Pass
+    ``day=YYYY-MM-DD`` to fetch exactly one historical session (the trade-focus
+    view); otherwise the window ends today."""
     import datetime as dt
+    import re
     import urllib.parse
     import urllib.request
 
@@ -657,10 +660,15 @@ async def bars(symbol: str, tf: str = "1m") -> dict:
         return {"symbol": symbol, "tf": tf, "candles": [], "error": "no Polygon key configured"}
     mult, span, days = {"1m": (1, "minute", 4), "5m": (5, "minute", 10),
                         "1d": (1, "day", 200)}.get(tf, (1, "minute", 4))
-    today = dt.date.today()
-    frm = (today - dt.timedelta(days=days)).isoformat()
+    if day:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            return {"symbol": symbol, "tf": tf, "candles": [], "error": "bad day format"}
+        frm = to = day
+    else:
+        today = dt.date.today()
+        frm, to = (today - dt.timedelta(days=days)).isoformat(), today.isoformat()
     q = urllib.parse.urlencode({"adjusted": "true", "sort": "asc", "limit": 50000, "apiKey": key})
-    url = f"https://api.polygon.io/v2/aggs/ticker/{symbol.upper()}/range/{mult}/{span}/{frm}/{today.isoformat()}?{q}"
+    url = f"https://api.polygon.io/v2/aggs/ticker/{symbol.upper()}/range/{mult}/{span}/{frm}/{to}?{q}"
 
     def fetch():
         with urllib.request.urlopen(url, timeout=15) as r:

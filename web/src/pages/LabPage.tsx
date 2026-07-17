@@ -3,6 +3,7 @@ import {
   getLabDryrun, getLabGauntlet, getLabRun, getLabStrategies, getLeaderboard, LabStrategy, LeaderRow,
   renameLabStrategy, runLabStrategy, setLabActive,
 } from "../api";
+import TradeFocus, { type FocusTrade } from "../components/TradeFocus";
 import EdgePage from "./EdgePage";
 import ExitLabPage from "./ExitLabPage";
 import GauntletPage from "./GauntletPage";
@@ -78,6 +79,7 @@ function LeaderboardTab() {
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
   const [gaunt, setGaunt] = useState<any | null>(null);
   const [dry, setDry] = useState<any | null>(null);
+  const [focusTrade, setFocusTrade] = useState<FocusTrade | null>(null);
 
   const reloadBoard = async (rb = rankBy, w = win) => setBoard(await getLeaderboard(rb, w));
   const reloadStrats = async () => {
@@ -415,7 +417,9 @@ function LeaderboardTab() {
                       <tbody>
                         {shown.length === 0 && <tr><td colSpan={7} className="px-2 py-3 text-center" style={{ color: "var(--muted)" }}>no trades this month</td></tr>}
                         {shown.map((t: any, i: number) => (
-                          <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
+                          <tr key={i} onClick={() => setFocusTrade(t as FocusTrade)} className="cursor-pointer"
+                            title="click for the focused chart of this trade"
+                            style={{ borderTop: "1px solid var(--line)" }}>
                         <td className="px-2 py-1 mono">{t.day}</td>
                         <td className="px-2 py-1">{t.symbol}</td>
                         <td className="px-2 py-1 mono">{tod(t.entry_tod)}→{tod(t.exit_tod)}</td>
@@ -434,6 +438,7 @@ function LeaderboardTab() {
           </div>
         </div>
       )}
+      {focusTrade && <TradeFocus trade={focusTrade} onClose={() => setFocusTrade(null)} />}
     </div>
   );
 }
