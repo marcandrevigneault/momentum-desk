@@ -30,10 +30,10 @@ jobs:
         run: ruff check .
       - name: Test (pytest)
         run: pytest
-      - name: Smoke — scanner + backtester run
+      - name: Smoke — scanner + account simulation
         run: |
           python -m momentum_desk.cli --ticks 3 --interval 0
-          python -m momentum_desk.backtest.cli --days 15 --trades 0
+          python -c "from momentum_desk.backtest import SyntheticHistory; from momentum_desk.edge.portfolio import run_simulation; r = run_simulation(SyntheticHistory(days=10, session='intraday')); assert r.metrics['trades'] > 0; print('smoke:', r.metrics['trades'], 'trades')"
 
   web:
     name: build dashboard
