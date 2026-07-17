@@ -4,14 +4,24 @@ import type { Candle } from "../types";
 
 /** Candlestick chart (TradingView Lightweight Charts) fed by our OHLC bars,
  *  with the trade plan drawn as price lines (entry / stop / target / trail). */
+export interface ChartMarker {
+  time: number;
+  position: "aboveBar" | "belowBar";
+  color: string;
+  shape: "arrowUp" | "arrowDown";
+  text: string;
+}
+
 export default function CandleChart({
-  candles, entry, stop, target, trailStop,
+  candles, entry, stop, target, trailStop, exitPrice, markers,
 }: {
   candles: Candle[];
   entry?: number;
   stop?: number;
   target?: number;
   trailStop?: number;
+  exitPrice?: number;
+  markers?: ChartMarker[];
 }) {
   const elRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -56,8 +66,10 @@ export default function CandleChart({
     line(target, "#34d399", "target");
     line(stop, "#f87171", "stop");
     line(trailStop, "#fbbf24", "trail");
+    line(exitPrice, "#c084fc", "exit");
+    series.setMarkers(((markers ?? []).slice().sort((a, b) => a.time - b.time)) as never);
     if (candles.length) chart.timeScale().fitContent();
-  }, [candles, entry, stop, target, trailStop]);
+  }, [candles, entry, stop, target, trailStop, exitPrice, markers]);
 
   // The ref'd div must ALWAYS mount, even while candles is empty — the create
   // effect runs once on mount and bails permanently if the element isn't there.
