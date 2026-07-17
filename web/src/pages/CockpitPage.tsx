@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { getIbkrPortfolio, getLiveIntent, getTrades, type IbkrPortfolio, type LiveIntent } from "../api";
+import { getIbkrPortfolio, getTrades, type IbkrPortfolio } from "../api";
+import { useLiveIntent } from "../useLiveIntent";
 import DetailPanel from "../components/DetailPanel";
 import Positions from "../components/Positions";
 import ScannerTable from "../components/ScannerTable";
@@ -53,14 +54,7 @@ function FeedFreshness({ data }: { data: ScanMessage }) {
 }
 
 function LiveEngineBadge() {
-  const [li, setLi] = useState<LiveIntent | null>(null);
-  useEffect(() => {
-    let on = true;
-    const tick = () => getLiveIntent().then((r) => on && setLi(r)).catch(() => {});
-    tick();
-    const id = setInterval(tick, 10000);
-    return () => { on = false; clearInterval(id); };
-  }, []);
+  const li = useLiveIntent();
   if (!li?.available) return null;   // engine off / multi-leg active → nothing to show
   const pnl = li.day_pnl ?? 0;
   const c = li.armed ? "var(--red)" : "var(--blue, #5b8def)";

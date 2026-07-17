@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   getLabDryrun, getLabGauntlet, getLabRun, getLabStrategies, getLeaderboard, LabStrategy, LeaderRow,
-  renameLabStrategy, setLabActive,
+  renameLabStrategy, runLabStrategy, setLabActive,
 } from "../api";
 import EdgePage from "./EdgePage";
 import ExitLabPage from "./ExitLabPage";
@@ -108,6 +108,19 @@ function LeaderboardTab() {
     setRename("");
   };
 
+  const [running, setRunning] = useState(false);
+  const rerun = async () => {
+    if (!selected || running) return;
+    setRunning(true);
+    try {
+      const res = await runLabStrategy(selected.strategy, win);
+      await reloadBoard();
+      if (res?.run_id) setSelected(await getLabRun(res.run_id));
+    } finally {
+      setRunning(false);
+    }
+  };
+
   return (
     <div className="h-full overflow-auto p-4 flex flex-col gap-4">
       {/* header */}
@@ -191,8 +204,14 @@ function LeaderboardTab() {
               title="rename this strategy" />
             <span className="mono text-[11px]" style={{ color: "var(--muted)" }}>{selected.window} · {selected.data_source}</span>
             {active === selected.strategy && <span className="mono text-[10px] px-2 py-0.5 rounded" style={{ color: "var(--green)", border: "1px solid var(--green)" }}>★ ACTIVE</span>}
-            <button onClick={() => { setSelected(null); setGaunt(null); setDry(null); setMonthFilter(null); }}
+            <button onClick={rerun} disabled={running}
               className="ml-auto mono text-[11px] px-2 py-1 rounded"
+              style={{ background: "var(--panel-2)", border: "1px solid var(--line)",
+                       color: running ? "var(--muted)" : "var(--green)" }}
+              title={`re-run this strategy on the ${win} window and refresh its leaderboard entry`}>
+              {running ? "⏳ running…" : `↻ re-run ${win}`}</button>
+            <button onClick={() => { setSelected(null); setGaunt(null); setDry(null); setMonthFilter(null); }}
+              className="mono text-[11px] px-2 py-1 rounded"
               style={{ background: "var(--panel-2)", border: "1px solid var(--line)", color: "var(--muted)" }}
               title="back to the strategy list">✕ close</button>
           </div>

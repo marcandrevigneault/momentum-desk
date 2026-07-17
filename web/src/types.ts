@@ -58,12 +58,6 @@ export interface ScanMessage {
   positions: Position[];
 }
 
-export interface Point {
-  t: number;
-  last: number;
-  vwap: number;
-}
-
 export interface Candle {
   time: number;   // epoch seconds
   open: number;
@@ -84,64 +78,6 @@ export interface Trade {
   pnl: number;
   opened_ts: number;
   closed_ts: number;
-}
-
-export interface BacktestMetrics {
-  trades: number;
-  win_rate: number;
-  profit_factor: number;
-  avg_win: number;
-  avg_loss: number;
-  expectancy: number;
-  expectancy_r: number;
-  total_pnl: number;
-  return_pct: number;
-  max_drawdown: number;
-  max_drawdown_pct: number;
-}
-
-export interface BacktestTrade {
-  symbol: string;
-  day: string;
-  entry: number;
-  exit: number;
-  shares: number;
-  exit_reason: string;
-  r_multiple: number;
-  pnl: number;
-}
-
-export interface PeriodRow {
-  period: string;
-  trades: number;
-  wins: number;
-  win_rate: number;
-  pnl: number;
-  cum_pnl: number;
-}
-
-export interface Job {
-  id: string;
-  status: string;          // running | done | error
-  elapsed: number;
-  progress: number;        // 0..1
-  params: Record<string, number | string>;
-  error?: string;
-}
-
-export interface RunSummary {
-  id: string;
-  ts: number;
-  kind: string;
-  synthetic?: boolean;
-  session?: string;
-  days?: number;
-  trades?: number;
-  expectancy_r?: number;
-  total_pnl?: number;
-  max_drawdown_pct?: number;
-  target_r?: number;
-  time_exit_tod?: number;
 }
 
 export interface EdgeDecile {
@@ -267,63 +203,6 @@ export interface Gauntlet {
   sessions: Record<string, GauntletSession>;
 }
 
-export interface SimDailyEquity {
-  date: string;
-  equity: number;
-}
-
-export interface SimTrade {
-  day: string;
-  symbol: string;
-  entry_tod: number;
-  exit_tod: number;
-  entry: number;
-  exit: number;
-  shares: number;
-  pnl: number;
-  r_multiple: number;
-  exit_reason: string;
-}
-
-export interface SimStressRow {
-  slippage_pct: number;
-  final_equity: number;
-  return_pct: number;
-  win_rate: number;
-  profit_factor: number;
-  expectancy_r: number;
-  max_drawdown_pct: number;
-}
-
-export interface SimRun {
-  source?: string;
-  session?: string;       // single-strategy sims only (combos use `legs`)
-  legs?: string[];        // combos only
-  stress?: SimStressRow[];
-  exit_policy: string;
-  days: number;
-  starting_equity: number;
-  final_equity: number;
-  n_signals: number;
-  n_taken: number;
-  n_skipped_capacity: number;
-  metrics: BacktestMetrics;
-  equity_curve: number[];
-  daily_equity: SimDailyEquity[];
-  monthly: PeriodRow[];
-  trades: SimTrade[];
-}
-
-export interface OptimizeSessionResult {
-  n_configs: number;
-  best_label: string;
-  best_sharpe: number;
-  deflated_sharpe: number;
-  robust: boolean;
-  note: string;
-  top: { label: string; daily_sharpe: number; expectancy_r: number; win_rate: number; profit_factor: number | null; n: number }[];
-}
-
 export interface RuleResult {
   name: string;
   rule: string;
@@ -341,57 +220,4 @@ export interface RulesSnapshot {
   session?: string;
   days?: number;
   results: RuleResult[];
-}
-
-export interface OptimizeSnapshot {
-  source: string;
-  generated?: string;
-  sessions: Record<string, OptimizeSessionResult>;
-}
-
-export interface ActiveStrategy {
-  active: string | null;
-  label?: string;
-  ts?: number;
-}
-
-export interface CombosSnapshot {
-  source: string;
-  generated?: string;
-  days?: number;
-  data?: string;
-  combos: Record<string, ComboRun>;
-}
-
-export interface ComboRun {
-  source: string;
-  generated?: string;
-  config?: string;
-  label?: string;
-  legs: string[];
-  days: number;
-  starting_equity: number;
-  final_equity: number;
-  n_signals: number;
-  n_taken: number;
-  n_skipped_capacity: number;
-  metrics: BacktestMetrics;
-  leg_pnl: Record<string, number>;
-  leg_trades: Record<string, number>;
-  equity_curve: number[];
-  daily_equity: SimDailyEquity[];
-  monthly: PeriodRow[];
-  trades: SimTrade[];
-}
-
-export interface BacktestRun {
-  synthetic: boolean;
-  session: string;
-  days: number;
-  metrics: BacktestMetrics;
-  equity_curve: number[];
-  trades: BacktestTrade[];
-  monthly?: PeriodRow[];
-  yearly?: PeriodRow[];
-  available?: boolean;        // for the real-run loader
 }
