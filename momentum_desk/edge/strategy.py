@@ -53,6 +53,7 @@ class Strategy:
     max_concurrent: int = 5
     max_gross_pct: float = 100.0
     legs: list[LegSpec] = field(default_factory=list)   # combo only
+    insider: dict = field(default_factory=dict)         # insider kind only — InsiderConfig overrides
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -62,13 +63,15 @@ class Strategy:
         d = dict(d)
         sizing = d.pop("sizing", None)
         legs = d.pop("legs", None) or []
-        known = {f for f in cls.__dataclass_fields__ if f not in ("sizing", "legs")}  # type: ignore[attr-defined]
+        d_insider = d.pop("insider", None)
+        known = {f for f in cls.__dataclass_fields__ if f not in ("sizing", "legs", "insider")}  # type: ignore[attr-defined]
         strat = cls(**{k: v for k, v in d.items() if k in known})
         if isinstance(sizing, dict):
             strat.sizing = SizingSpec(**{k: v for k, v in sizing.items()
                                          if k in SizingSpec.__dataclass_fields__})
         strat.legs = [LegSpec(**{k: v for k, v in leg.items() if k in LegSpec.__dataclass_fields__})
                       for leg in legs if isinstance(leg, dict)]
+        strat.insider = d_insider if isinstance(d_insider, dict) else {}
         return strat
 
 
@@ -85,6 +88,9 @@ def run_strategy(strategy: Strategy, provider_factory, *, account_equity: float 
     a session name to a HistoricalProvider, so the same Strategy can run on
     synthetic or real data without the Strategy knowing about feeds."""
     risk = _risk(strategy, account_equity)
+    if strategy.kind == "insider":
+        from ..insider.bundles import run_insider_strategy
+        return run_insider_strategy(strategy, provider_factory("insider"), risk)
     if strategy.kind == "combo":
         legs = [
             ComboLeg(name=leg.name, provider=provider_factory(leg.session), session=leg.session,

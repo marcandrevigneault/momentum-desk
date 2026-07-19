@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from ..backtest.providers import PolygonHistory, SyntheticHistory
+from ..insider.bundles import RealInsiderBundle, SyntheticInsiderBundle
 from .store import LabStore
 from .strategy import LegSpec, Strategy, run_strategy
 
@@ -27,6 +28,17 @@ CANONICAL: list[Strategy] = [
              legs=[LegSpec(name="premarket", session="premarket"),
                    LegSpec(name="intraday", session="intraday"),
                    LegSpec(name="fade", session="intraday", style="fade")]),
+    Strategy(name="Insider: officer buys", kind="insider",
+             insider={"roles": "officer", "min_value": 25_000.0}),
+    Strategy(name="Insider: CEO/CFO buys", kind="insider",
+             insider={"roles": "ceo_cfo", "min_value": 25_000.0}),
+    Strategy(name="Insider: cluster buys", kind="insider",
+             insider={"cluster_n": 2, "cluster_window_days": 10}),
+    Strategy(name="Insider: small-cap cluster", kind="insider",
+             insider={"cluster_n": 2, "max_market_cap": 2_000_000_000.0,
+                      "include_unknown_cap": False}),
+    Strategy(name="Insider: news-quiet buys", kind="insider",
+             insider={"roles": "officer", "news_filter": "quiet"}),
 ]
 
 _DAYS = {"1y": 252, "5y": 1260}
@@ -54,10 +66,20 @@ def best_data_source() -> str:
 def _provider_factory(days: int, data_source: str):
     if data_source == "polygon":
         key = _data_key()
-        return lambda session: PolygonHistory(
-            api_key=key, days=days,
-            universe_mode="active" if session == "intraday" else "gap", max_per_min=0)
-    return lambda session: SyntheticHistory(days=days, session=session)
+
+        def _polygon(session: str):
+            if session == "insider":
+                return RealInsiderBundle(api_key=key, days=days)
+            return PolygonHistory(
+                api_key=key, days=days,
+                universe_mode="active" if session == "intraday" else "gap", max_per_min=0)
+        return _polygon
+
+    def _synthetic(session: str):
+        if session == "insider":
+            return SyntheticInsiderBundle(days=days)
+        return SyntheticHistory(days=days, session=session)
+    return _synthetic
 
 
 def run_only(strategy: Strategy, *, window: str = "1y", data_source: str | None = None,
