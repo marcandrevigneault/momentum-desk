@@ -159,7 +159,7 @@ def run_insider(events: list[InsiderEvent], provider: DailyProvider,
                     exit_price, reason = trail, "trail"
                 else:
                     held = idx - pos.entry_index
-                    if held == cfg.hold_days:
+                    if held >= cfg.hold_days:
                         exit_price, reason = bar.c, "time"
 
             if exit_price is not None:

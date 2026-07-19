@@ -60,3 +60,33 @@ def test_lab_api_create_and_run_insider(monkeypatch):
         assert run["data_source"] == "synthetic"
         assert run["result"]["metrics"]["trades"] >= 0
         assert run["result"]["config"].get("roles") == "ceo_cfo"
+
+
+def test_lab_api_unknown_insider_roles_returns_400_not_500(monkeypatch):
+    """Review finding: an unrecognized `roles` string (e.g. from a stray
+    client) reaches signals._role_pass's ValueError uncaught inside the
+    /api/lab/run worker thread, surfacing as an HTTP 500. It must come back
+    as a clean 400 instead, and a valid roles value must still succeed."""
+    monkeypatch.delenv("POLYGON_API_KEY", raising=False)
+    monkeypatch.delenv("MASSIVE_API_KEY", raising=False)
+    with TestClient(app) as c:
+        r = c.post("/api/lab/strategies", json={
+            "name": "Bad roles", "kind": "insider", "insider": {"roles": "director"},
+        })
+        assert r.status_code == 200
+        assert r.json()["ok"]
+
+        r = c.post("/api/lab/run", json={"name": "Bad roles", "window": "1y", "data_source": "synthetic"})
+        assert r.status_code == 400
+        body = r.json()
+        assert body["ok"] is False
+        assert "roles" in body["error"]
+
+        # a valid roles value on the same route still succeeds (200)
+        r = c.post("/api/lab/strategies", json={
+            "name": "Good roles", "kind": "insider", "insider": {"roles": "officer"},
+        })
+        assert r.status_code == 200
+        r = c.post("/api/lab/run", json={"name": "Good roles", "window": "1y", "data_source": "synthetic"})
+        assert r.status_code == 200
+        assert r.json()["ok"]

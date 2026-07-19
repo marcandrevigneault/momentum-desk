@@ -106,16 +106,17 @@ def seed(store: LabStore) -> None:
         strats = [Strategy.from_dict(c) for c in data["strategies"]] if data.get("strategies") else CANONICAL
         for s in strats:
             store.save_strategy(s)
-    else:
-        # Backfill: a store that already existed before a CANONICAL entry was
-        # added (e.g. the 5 insider variants) never gets it via the empty-store
-        # branch above, so the feature stays invisible in a running Lab. Add
-        # any CANONICAL strategy whose name isn't already present; leave
-        # existing strategies (canonical or user-saved) untouched. Idempotent.
-        existing_names = {s.name for s in store.list_strategies()}
-        for s in CANONICAL:
-            if s.name not in existing_names:
-                store.save_strategy(s)
+    # Backfill: runs unconditionally (idempotent either way) so a CANONICAL
+    # entry added after a committed lab_seed.json was captured (e.g. the 5
+    # insider variants) shows up on the very FIRST boot of a fresh store, not
+    # just a second one — the empty-store branch above only loads whatever
+    # `data["strategies"]` happened to contain. Add any CANONICAL strategy
+    # whose name isn't already present; leave existing strategies (canonical
+    # or user-saved) untouched.
+    existing_names = {s.name for s in store.list_strategies()}
+    for s in CANONICAL:
+        if s.name not in existing_names:
+            store.save_strategy(s)
     if test_mode:
         return
     if not store.leaderboard():

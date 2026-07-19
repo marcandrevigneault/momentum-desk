@@ -161,6 +161,43 @@ def test_top_role_priority_and_conviction():
     assert ev.conviction == 0.5
 
 
+def test_min_filed_drops_stale_cluster_keeps_in_window_one():
+    """RealInsiderBundle review finding: without a floor, a cluster whose
+    latest filing predates trading_days[0] gets bisect_right == 0 and fires
+    on day 1 regardless of how stale it is. min_filed drops those while an
+    in-window cluster still emits normally."""
+    filings = [
+        mk(sym="STALE", filed="2025-02-01", is_officer=True),   # predates DAYS[0]
+        mk(sym="ACME", filed="2025-03-14", is_officer=True),    # within DAYS
+    ]
+    cfg = InsiderConfig()
+    events = build_events(filings, cfg, DAYS, min_filed="2025-03-01")
+    assert [e.symbol for e in events] == ["ACME"]
+
+
+def test_min_filed_none_default_unchanged_behavior():
+    filings = [mk(filed="2025-03-14", is_officer=True)]
+    cfg = InsiderConfig()
+    events = build_events(filings, cfg, DAYS)
+    assert len(events) == 1
+    assert events[0].trigger_day == "2025-03-17"
+
+
+def test_min_filed_does_not_affect_routine_keys_lookback():
+    """routine_keys must still see the FULL filings list even when min_filed
+    would exclude the routine history's own trigger — min_filed only gates
+    which clusters can EMIT, not what routine_keys is computed from."""
+    history = [
+        mk(filed="2022-03-05", owner="Jane Doe", shares=10, price=1.0),
+        mk(filed="2023-03-12", owner="Jane Doe", shares=10, price=1.0),
+        mk(filed="2024-03-20", owner="Jane Doe", shares=10, price=1.0),
+    ]
+    candidate = [mk(filed="2025-03-10", owner="Jane Doe", is_officer=True)]
+    cfg = InsiderConfig()
+    events = build_events(history + candidate, cfg, DAYS, min_filed="2025-01-01")
+    assert events == []   # still dropped as a routine trader, not emitted via min_filed gap
+
+
 def test_events_sorted_by_trigger_day():
     filings = [
         mk(sym="ACME", filed="2025-03-18", owner="Jane Doe", is_officer=True),

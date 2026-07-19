@@ -70,13 +70,21 @@ def _top_role(cluster: list[InsiderFiling]) -> str:
 
 
 def build_events(
-    filings: list[InsiderFiling], cfg: InsiderConfig, trading_days: list[str]
+    filings: list[InsiderFiling], cfg: InsiderConfig, trading_days: list[str],
+    *, min_filed: str | None = None,
 ) -> list[InsiderEvent]:
     """Pure function: apply filters, cluster per symbol, emit events sorted by
     trigger_day. Only days in `trading_days` are eligible trigger days; the
     trigger is the first trading day STRICTLY AFTER the latest filing date in
     the cluster. Filings whose trigger would fall past the last trading day
-    are dropped. Enrichment fields are left at defaults (Task 4 fills them)."""
+    are dropped. Enrichment fields are left at defaults (Task 4 fills them).
+
+    `min_filed`, when set, drops any cluster whose latest `filed` predates it
+    — otherwise a cluster that's stale relative to the trading window (its
+    latest filing predates trading_days[0]) gets `bisect_right` == 0 and all
+    pile onto trigger_day == trading_days[0], a day-1 burst of ancient
+    filings. routine_keys is still computed from the FULL, unfiltered
+    `filings` list — the routine-trader lookback needs the long history."""
     routine = routine_keys(filings) if cfg.exclude_routine else set()
 
     kept = [f for f in filings if f.code == "P" and f.shares > 0 and f.price > 0]
@@ -109,6 +117,8 @@ def build_events(
                 continue
 
             latest_filed = max(f.filed for f in cluster)
+            if min_filed is not None and latest_filed < min_filed:
+                continue
             trigger_idx = bisect.bisect_right(trading_days, latest_filed)
             if trigger_idx >= len(trading_days):
                 continue  # no future trading day left — drop

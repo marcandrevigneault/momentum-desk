@@ -124,7 +124,12 @@ def _find_10b5_column(fieldnames: list[str] | None) -> str | None:
 def parse_quarter_zip(zip_bytes: bytes) -> list[InsiderFiling]:
     """Parse SUBMISSION.tsv + REPORTINGOWNER.tsv + NONDERIV_TRANS.tsv from one
     quarterly ZIP into InsiderFiling rows (one row per non-derivative
-    transaction line, joined on ACCESSION_NUMBER)."""
+    transaction line, joined on ACCESSION_NUMBER).
+
+    Limitation: a multi-owner (jointly filed) accession has multiple
+    REPORTINGOWNER rows sharing one ACCESSION_NUMBER, but `owner_by_acc`
+    keeps only the last one seen — so joint filings collapse to a single
+    reporting owner, undercounting n_insiders for those filings."""
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         submissions = _read_tsv(zf, "SUBMISSION.tsv")
         owners = _read_tsv(zf, "REPORTINGOWNER.tsv")

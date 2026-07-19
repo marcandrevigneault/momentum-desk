@@ -5,6 +5,8 @@ build_events/filter_events pipeline, and the Lab's canonical variants /
 provider-factory wiring."""
 from __future__ import annotations
 
+import json
+
 from momentum_desk.edge.lab import CANONICAL, gauntlet_key, run_only, seed
 from momentum_desk.edge.result import AccountRun
 from momentum_desk.edge.store import LabStore
@@ -104,3 +106,31 @@ def test_seed_backfills_insider_canonicals_into_nonempty_store(monkeypatch):
     names_after = [s.name for s in store.list_strategies()]
     assert len(names_after) == len(set(names_after))
     assert insider_names <= set(names_after)
+
+
+def test_seed_loads_insider_canonicals_on_first_boot_with_pre_insider_seed_json(monkeypatch, tmp_path):
+    """Task 6 review finding continued: on a FRESH empty store, seed() only
+    populated whatever `data["strategies"]` the committed (pre-insider)
+    lab_seed.json contained, and the CANONICAL backfill previously ran only
+    in the non-empty-store `else` branch — so insider variants were invisible
+    until a SECOND seed() call. One seed() call against an empty store, with
+    a seed json missing the insider variants, must now surface them
+    immediately."""
+    monkeypatch.delenv("LAB_SEED", raising=False)   # exercise the real (non-test-mode) path
+    seed_path = tmp_path / "lab_seed.json"
+    seed_path.write_text(json.dumps({
+        "strategies": [
+            {"name": "Intraday momentum", "kind": "single", "session": "intraday"},
+        ],
+        "runs": [],
+    }))
+    import momentum_desk.edge.lab as lab_module
+    monkeypatch.setattr(lab_module, "SEED_PATH", seed_path)
+
+    store = LabStore(":memory:")
+    seed(store)
+
+    names = {s.name for s in store.list_strategies()}
+    insider_names = {s.name for s in CANONICAL if s.kind == "insider"}
+    assert "Intraday momentum" in names
+    assert insider_names <= names

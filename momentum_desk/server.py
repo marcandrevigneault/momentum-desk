@@ -19,6 +19,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .backtest.data import MinuteBar
@@ -550,7 +551,12 @@ async def lab_run_strategy(payload: dict) -> dict:
         return {"ok": False, "error": "provide a known strategy name or an inline strategy config"}
     # compute off the event loop; write to the DB on this (the connection's) thread
     ds = best_data_source()
-    result = await asyncio.to_thread(run_only, strat, window=window, data_source=ds)
+    try:
+        result = await asyncio.to_thread(run_only, strat, window=window, data_source=ds)
+    except ValueError as exc:
+        # Bad-but-well-formed config (e.g. an unrecognized insider `roles`
+        # string) — a client error, not a server crash.
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
     run_id = app.state.lab.save_run(strat, window, ds, result)
     return {"ok": True, "run_id": run_id, "window": window, "data_source": ds, **asdict_result(result)}
 

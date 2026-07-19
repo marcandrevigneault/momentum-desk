@@ -147,6 +147,37 @@ def test_time_stop_after_hold_days():
     assert t["r_multiple"] == 0.016
 
 
+def test_time_stop_fires_on_next_bar_after_gap_on_exact_hold_day():
+    """Review finding: `held == cfg.hold_days` never fires if the symbol has
+    no bar on the EXACT hold day (halt/gap in real data) — the position then
+    rides all the way to "end" instead of exiting on a time stop. `>=` fixes
+    it: the position exits at the NEXT available bar's close, reason "time"."""
+    days = ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08"]
+    provider = FakeDaily(days=days, bars={
+        "AAA": [
+            bar(days[0], o=100, h=101, l=99, c=100),
+            bar(days[1], o=101, h=102, l=99, c=101),
+            # days[2] (the exact hold_days=2 day): NO BAR — data gap/halt.
+            bar(days[3], o=104, h=105, l=103, c=104),
+            bar(days[4], o=110, h=111, l=109, c=110),
+        ],
+    })
+    cfg = InsiderConfig(stop_pct=90.0, trail_pct=90.0, hold_days=2)
+    result = run_insider([event("AAA", days[0])], provider, cfg, RiskConfig(),
+                          slippage_pct=0.0)
+
+    assert len(result.trades) == 1
+    t = result.trades[0]
+    assert t["exit_reason"] == "time"
+    assert t["exit_day"] == days[3]
+    assert t["entry"] == 100.0
+    assert t["exit"] == 104.0
+    assert t["shares"] == 2
+    assert t["pnl"] == 6.0
+    assert t["r_multiple"] == 0.024
+    assert t["hold_days"] == 3
+
+
 def test_end_of_window_close():
     days = D[:2]
     provider = FakeDaily(days=days, bars={

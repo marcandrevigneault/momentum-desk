@@ -17,8 +17,9 @@ only against injected fakes here, real network runs are a follow-up.
 from __future__ import annotations
 
 import hashlib
+import logging
 import random
-from datetime import date
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Protocol
 
 from ..backtest.client import CachedClient
@@ -32,6 +33,14 @@ from .simulate import InsiderResult, run_insider
 
 if TYPE_CHECKING:
     from ..edge.strategy import Strategy
+
+_log = logging.getLogger(__name__)
+
+# The only InsiderConfig.roles values signals._role_pass recognizes — checked
+# eagerly here so an unrecognized value (e.g. a stray "director" reaching the
+# API) raises a clear, catchable ValueError instead of surfacing deep inside
+# build_events on a worker thread.
+_KNOWN_ROLES = {"any", "officer", "ceo_cfo"}
 
 
 class InsiderBundle(Protocol):
@@ -136,6 +145,14 @@ def _quarters_covering(start: date, end: date) -> list[tuple[int, int]]:
     return out
 
 
+def _quarter_end(year: int, quarter: int) -> date:
+    """Last calendar day of (year, quarter)."""
+    month = quarter * 3
+    if month == 12:
+        return date(year, 12, 31)
+    return date(year, month + 1, 1) - timedelta(days=1)
+
+
 class RealInsiderBundle:
     """EdgarStore filings (loading quarters on demand for the price window
     plus a 3-year routine-filter lookback) + PolygonDaily + enrich_events via
@@ -166,10 +183,29 @@ class RealInsiderBundle:
             return []
         lookback_start = self._lookback_start(trading_days[0])
         end = date.fromisoformat(trading_days[-1])
+        today = date.today()
         for year, quarter in _quarters_covering(lookback_start, end):
-            self._store.load_quarter(year, quarter)
+            if _quarter_end(year, quarter) >= today:
+                # SEC only publishes a quarter's form345 zip after the quarter
+                # closes — requesting the current, in-progress quarter always
+                # 404s (or worse). Skip it rather than crash the run.
+                continue
+            try:
+                self._store.load_quarter(year, quarter)
+            except Exception:  # noqa: BLE001 - a missing/broken quarter logs and skips
+                _log.warning(
+                    "insider: failed to load EDGAR quarter %sQ%s — skipping", year, quarter,
+                )
+                continue
         filings = self._store.filings(start=lookback_start.isoformat(), end=trading_days[-1])
-        raw = build_events(filings, cfg, trading_days)
+        # Floor triggers to the price window: without this, any cluster whose
+        # latest filing predates trading_days[0] gets bisect_right == 0 and
+        # every one of them (routine_keys needs the full 3y filings list, so
+        # they're all loaded) fires on day 1 — a stale-filing burst. 5
+        # calendar days of slack before the window start is plenty since
+        # routine filtering/clustering only cares about relative order.
+        min_filed = (date.fromisoformat(trading_days[0]) - timedelta(days=5)).isoformat()
+        raw = build_events(filings, cfg, trading_days, min_filed=min_filed)
         enriched = enrich_events(raw, self._client, cfg)
         return filter_events(enriched, cfg)
 
@@ -189,6 +225,10 @@ def run_insider_strategy(strategy: Strategy, bundle: InsiderBundle, risk_cfg: Ri
     cfg = InsiderConfig(**{
         k: v for k, v in strategy.insider.items() if k in InsiderConfig.__dataclass_fields__
     })
+    if cfg.roles not in _KNOWN_ROLES:
+        raise ValueError(
+            f"unknown insider roles: {cfg.roles!r} (expected one of {sorted(_KNOWN_ROLES)})"
+        )
     events = bundle.events(cfg)
     return run_insider(
         events, bundle.provider(), cfg, risk_cfg,

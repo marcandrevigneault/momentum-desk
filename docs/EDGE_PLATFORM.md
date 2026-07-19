@@ -135,3 +135,8 @@ Five canonical variants are seeded:
 Leaderboard rows for these runs carry `kind: "insider"` and show a small
 "insider" badge in the Lab UI. Full design, data sources, and signal
 construction: `docs/superpowers/specs/2026-07-19-insider-strategy-design.md`.
+
+Market cap/sector enrichment is sourced from Polygon's CURRENT reference data
+(as-of-today, not as-of-filing), so conditioning on small-cap over long
+backtests carries some misclassification bias (a company's cap changes over
+years) — a Phase 2 item is to make this enrichment point-in-time.
