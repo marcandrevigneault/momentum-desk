@@ -50,10 +50,13 @@ def _enrich_one(event: InsiderEvent, client: CachedClient, cfg: InsiderConfig) -
 def _profile(symbol: str, client: CachedClient) -> tuple[float | None, str | None]:
     try:
         r = client.get_json(f"/v3/reference/tickers/{symbol}")
+        results = r.get("results") or {}
+        return results.get("market_cap"), results.get("sic_description")
     except Exception:
+        # Covers network/HTTP errors as well as malformed 200 bodies (a
+        # non-dict `r` or `results` of the wrong shape raising AttributeError
+        # on `.get`) — any of it should shrink the signal, not blow up.
         return None, None
-    results = r.get("results") or {}
-    return results.get("market_cap"), results.get("sic_description")
 
 
 def _news(
@@ -70,16 +73,19 @@ def _news(
                 "limit": _NEWS_LIMIT,
             },
         )
-    except Exception:
+        # Lookahead guard: re-check the window ourselves rather than trusting
+        # the remote query params — news published *on* trigger_day must
+        # never count, since the strategy only trades on trigger_day using
+        # prior information.
+        for item in r.get("results") or []:
+            published_day = str(item.get("published_utc", ""))[:10]
+            if start <= published_day < trigger_day:
+                return True, item.get("title", "")
         return False, ""
-    # Lookahead guard: re-check the window ourselves rather than trusting the
-    # remote query params — news published *on* trigger_day must never count,
-    # since the strategy only trades on trigger_day using prior information.
-    for item in r.get("results") or []:
-        published_day = str(item.get("published_utc", ""))[:10]
-        if start <= published_day < trigger_day:
-            return True, item.get("title", "")
-    return False, ""
+    except Exception:
+        # Covers network/HTTP errors as well as malformed 200 bodies (a
+        # non-dict `r`, or a `results` whose shape breaks the loop above).
+        return False, ""
 
 
 def filter_events(events: list[InsiderEvent], cfg: InsiderConfig) -> list[InsiderEvent]:
