@@ -161,8 +161,6 @@ def run_insider(events: list[InsiderEvent], provider: DailyProvider,
                     held = idx - pos.entry_index
                     if held == cfg.hold_days:
                         exit_price, reason = bar.c, "time"
-                    elif is_last:
-                        exit_price, reason = bar.c, "end"
 
             if exit_price is not None:
                 _close(pos, day, exit_price, reason)
@@ -192,7 +190,7 @@ def run_insider(events: list[InsiderEvent], provider: DailyProvider,
             risk_dollars = equity_base * risk_cfg.max_risk_per_trade_pct / 100
             shares = int(risk_dollars / dist)
 
-            max_notional = equity_base * 0.25
+            max_notional = equity_base * risk_cfg.max_position_pct_of_equity / 100.0
             if shares * entry > max_notional:
                 shares = int(max_notional / entry)
             if shares <= 0:
@@ -210,23 +208,30 @@ def run_insider(events: list[InsiderEvent], provider: DailyProvider,
             ))
             n_taken += 1
 
-        # 3) end-of-day mark: realized equity + open positions marked at today's close
+        # 3) final-day closures: force-close every still-open position — including
+        # one entered THIS same day — at today's close, reason "end", BEFORE the
+        # daily_equity mark below. This keeps daily_equity[-1] in lockstep with
+        # final_equity (both realized, both net of commission) instead of the
+        # mark showing a gross unrealized mark for a position closed after the
+        # loop. A position with no bar for `day` (data gap) is left open — same
+        # as any other day where the symbol has no bar.
+        if is_last:
+            still_open = []
+            for pos in open_pos:
+                bar = bars_for(pos.symbol).get(day)
+                if bar is not None:
+                    _close(pos, day, bar.c, "end")
+                else:
+                    still_open.append(pos)
+            open_pos = still_open
+
+        # 4) end-of-day mark: realized equity + open positions marked at today's close
         mark = equity
         for pos in open_pos:
             bar = bars_for(pos.symbol).get(day)
             if bar is not None:
                 mark += (bar.c - pos.entry) * pos.shares
         daily_equity.append({"date": day, "equity": round(mark, 2)})
-
-    # anything still open past the last trading day (only possible for a
-    # position entered exactly on the last day, since exits above already
-    # force-close everything else on `is_last`) — close it at that same
-    # day's close so no position is silently left dangling.
-    if last_day is not None:
-        for pos in open_pos:
-            bar = bars_for(pos.symbol).get(last_day)
-            if bar is not None:
-                _close(pos, last_day, bar.c, "end")
 
     bt_trades = [
         Trade(symbol=t.symbol, day=t.day, entry_t=t.entry_tod, entry=t.entry, stop=0.0,

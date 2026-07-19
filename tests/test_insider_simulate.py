@@ -260,6 +260,35 @@ def test_daily_equity_marks_open_positions():
     assert result.final_equity == 25020.0
 
 
+def test_final_day_entry_closes_within_day_loop():
+    # Event triggers on the ONLY (hence also the last) trading day: the
+    # position is entered and force-closed same-day, net of commission,
+    # BEFORE that day's daily_equity mark is appended — so daily_equity[-1]
+    # must equal final_equity exactly (regression for the post-loop-sweep
+    # mismatch, where the mark was taken gross before the sweep closed it).
+    days = D[:1]
+    provider = FakeDaily(days=days, bars={
+        "AAA": [bar(days[0], o=100, h=105, l=99, c=102)],
+    })
+    cfg = InsiderConfig(stop_pct=90.0, trail_pct=90.0, hold_days=100)
+    result = run_insider([event("AAA", days[0])], provider, cfg, RiskConfig(),
+                          slippage_pct=0.0)
+
+    assert len(result.trades) == 1
+    t = result.trades[0]
+    assert t["exit_reason"] == "end"
+    assert t["exit_day"] == days[0]
+    assert t["entry"] == 100.0
+    assert t["exit"] == 102.0
+    assert t["shares"] == 2
+    assert t["pnl"] == 2.0   # gross (102-100)*2=4.0 minus $2.0 round-turn commission
+    assert t["hold_days"] == 0
+
+    assert result.final_equity == 25002.0
+    assert result.daily_equity == [{"date": days[0], "equity": 25002.0}]
+    assert result.daily_equity[-1]["equity"] == round(result.final_equity, 2)
+
+
 def test_result_is_account_run_with_metrics():
     days = D[:2]
     provider = FakeDaily(days=days, bars={
