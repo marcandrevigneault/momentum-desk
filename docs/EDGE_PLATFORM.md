@@ -126,10 +126,10 @@ the transaction date), with entry at the next session's open.
 
 Five canonical variants are seeded:
 
-- **Insider: all officer buys** — code P, value ≥$25K, any officer/director
+- **Insider: officer buys** — code P, value ≥$25K, any officer/director
 - **Insider: CEO/CFO buys** — CEO or CFO only, ≥$25K
-- **Insider: cluster buys** — ≥2 insiders within 10 trading days
-- **Insider: small-cap cluster** — cluster + market cap <$2B
+- **Insider: cluster buys** — ≥2 insiders within 10 calendar days
+- **Insider: small-cap cluster** — cluster + market cap <$2B, unknown-cap excluded
 - **Insider: news-quiet buys** — officer buys with no news in the prior 5 days
 
 Leaderboard rows for these runs carry `kind: "insider"` and show a small
