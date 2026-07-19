@@ -112,3 +112,26 @@ decile-lift table (mean forward R per decile) — the first readable answer to
 Run side by side on **premarket-gapper** and **intraday-active** universes
 (`scripts/screen_edge.py`). Synthetic data validates the machinery; real
 Massive/Polygon data (cached) produces the actual screen.
+
+## Insider strategies (event-driven)
+
+Alongside the bar-driven intraday breakout strategies above, `momentum_desk/insider/`
+adds a **parallel event-strategy engine** (`Strategy.kind = "insider"`) for
+SEC Form 4 insider-transaction signals — enter when corporate insiders file
+significant open-market purchases, hold multi-day, exit on a time stop, hard
+stop, or trailing stop (first hit wins). It plugs in at the `Strategy`/
+`AccountRun` seam so the Lab store, leaderboard, gauntlet, and UI all work
+unchanged; the tradable event is the EDGAR filing acceptance datetime (never
+the transaction date), with entry at the next session's open.
+
+Five canonical variants are seeded:
+
+- **Insider: all officer buys** — code P, value ≥$25K, any officer/director
+- **Insider: CEO/CFO buys** — CEO or CFO only, ≥$25K
+- **Insider: cluster buys** — ≥2 insiders within 10 trading days
+- **Insider: small-cap cluster** — cluster + market cap <$2B
+- **Insider: news-quiet buys** — officer buys with no news in the prior 5 days
+
+Leaderboard rows for these runs carry `kind: "insider"` and show a small
+"insider" badge in the Lab UI. Full design, data sources, and signal
+construction: `docs/superpowers/specs/2026-07-19-insider-strategy-design.md`.
