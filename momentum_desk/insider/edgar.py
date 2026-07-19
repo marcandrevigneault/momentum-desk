@@ -214,9 +214,9 @@ class EdgarStore:
 
     def load_quarter(self, year: int, quarter: int, *, fetch=None) -> int:
         """Idempotent: skips if the quarter is already recorded. Downloads via
-        urllib with SEC_UA, caches the raw zip at data/cache/edgar/{yq}.zip,
-        parses, inserts. Returns rows inserted. `fetch(url) -> bytes` injectable
-        for tests."""
+        urllib with SEC_UA, caches the raw zip under the db's directory at
+        <db dir>/cache/edgar/{yq}.zip, parses, inserts. Returns rows inserted.
+        `fetch(url) -> bytes` injectable for tests."""
         yq = f"{year}q{quarter}"
         cur = self._conn.execute("SELECT 1 FROM quarters_loaded WHERE yq = ?", (yq,))
         if cur.fetchone() is not None:

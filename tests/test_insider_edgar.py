@@ -112,6 +112,67 @@ def test_store_filings_date_range(tmp_path):
     assert out_of_range == []
 
 
+SUBMISSION_TSV_RELATIONSHIP = (
+    "ACCESSION_NUMBER\tFILING_DATE\tISSUERTRADINGSYMBOL\tDOCUMENT_TYPE\n"
+    "acc-1\t2024-04-01\tFOO\t4\n"
+    "acc-2\t2024-04-02\tBAR\t4\n"
+    "acc-3\t2024-04-03\tBAZ\t4\n"
+)
+
+# Real-world SEC shape: a comma-joined RPTOWNER_RELATIONSHIP column plus a
+# separate RPTOWNER_TITLE, instead of the brief's discrete ISDIRECTOR/
+# ISOFFICER/ISTENPERCENTOWNER/OFFICERTITLE columns.
+REPORTINGOWNER_TSV_RELATIONSHIP = (
+    "ACCESSION_NUMBER\tRPTOWNERNAME\tRPTOWNER_RELATIONSHIP\tRPTOWNER_TITLE\n"
+    "acc-1\tCindy CFO\tOfficer\tChief Financial Officer\n"
+    "acc-2\tDan Director\tDirector\t\n"
+    "acc-3\tTina TenPercent\tTenPercentOwner\t\n"
+)
+
+# Also covers the AFF10B5ONE ("Rule 10b5-1 trading plan") flag: set on acc-1,
+# explicitly unset on acc-2, blank (absent) on acc-3.
+NONDERIV_TRANS_TSV_10B5 = (
+    "ACCESSION_NUMBER\tTRANS_DATE\tTRANS_CODE\tTRANS_SHARES\tTRANS_PRICEPERSHARE\t"
+    "SHRS_OWND_FOLWNG_TRANS\tAFF10B5ONE\n"
+    "acc-1\t2024-04-01\tP\t1000\t10.0\t5000\t1\n"
+    "acc-2\t2024-04-02\tS\t500\t20.0\t1000\t0\n"
+    "acc-3\t2024-04-03\tP\t100\t5.0\t200\t\n"
+)
+
+
+def test_parse_real_world_reportingowner_relationship_shape_and_10b5_1():
+    rows = parse_quarter_zip(
+        make_zip(
+            submission=SUBMISSION_TSV_RELATIONSHIP,
+            reportingowner=REPORTINGOWNER_TSV_RELATIONSHIP,
+            nonderiv=NONDERIV_TRANS_TSV_10B5,
+        )
+    )
+    by_acc = {r.accession: r for r in rows}
+    assert set(by_acc) == {"acc-1", "acc-2", "acc-3"}
+
+    cfo = by_acc["acc-1"]
+    assert cfo.is_officer is True
+    assert cfo.is_cfo is True
+    assert cfo.is_director is False
+    assert cfo.is_ten_pct is False
+    assert cfo.officer_title == "Chief Financial Officer"
+    assert cfo.tenb5_1 is True
+
+    director = by_acc["acc-2"]
+    assert director.is_director is True
+    assert director.is_officer is False
+    assert director.is_cfo is False
+    assert director.is_ten_pct is False
+    assert director.tenb5_1 is False
+
+    ten_pct = by_acc["acc-3"]
+    assert ten_pct.is_ten_pct is True
+    assert ten_pct.is_officer is False
+    assert ten_pct.is_director is False
+    assert ten_pct.tenb5_1 is False
+
+
 def test_fetch_sends_user_agent(monkeypatch):
     from momentum_desk.insider import edgar as edgar_mod
 
