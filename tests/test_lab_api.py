@@ -36,3 +36,27 @@ def test_lab_flow():
         c.post("/api/lab/strategies", json={"name": "my-custom", "kind": "single", "session": "premarket"})
         names2 = [s["name"] for s in c.get("/api/lab/strategies").json()["strategies"]]
         assert "my-custom" in names2
+
+
+def test_lab_api_create_and_run_insider(monkeypatch):
+    """kind='insider' end-to-end through the HTTP API: save an inline strategy,
+    run it on the synthetic bundle, confirm the insider path was actually
+    exercised (not silently dispatched elsewhere). No data key -> best_data_source()
+    picks synthetic regardless of the environment running the suite."""
+    monkeypatch.delenv("POLYGON_API_KEY", raising=False)
+    monkeypatch.delenv("MASSIVE_API_KEY", raising=False)
+    with TestClient(app) as c:
+        r = c.post("/api/lab/strategies", json={
+            "name": "My insider", "kind": "insider", "insider": {"roles": "ceo_cfo"},
+        })
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] and body["strategy"]["kind"] == "insider"
+
+        r = c.post("/api/lab/run", json={"name": "My insider", "window": "1y", "data_source": "synthetic"})
+        assert r.status_code == 200
+        run = r.json()
+        assert run["ok"]
+        assert run["data_source"] == "synthetic"
+        assert run["result"]["metrics"]["trades"] >= 0
+        assert run["result"]["config"].get("roles") == "ceo_cfo"

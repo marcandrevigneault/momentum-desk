@@ -34,6 +34,7 @@ jobs:
         run: |
           python -m momentum_desk.cli --ticks 3 --interval 0
           python -c "from momentum_desk.backtest import SyntheticHistory; from momentum_desk.edge.portfolio import run_simulation; r = run_simulation(SyntheticHistory(days=10, session='intraday')); assert r.metrics['trades'] > 0; print('smoke:', r.metrics['trades'], 'trades')"
+          python -c "from momentum_desk.insider.bundles import SyntheticInsiderBundle, run_insider_strategy; from momentum_desk.edge.strategy import Strategy; from momentum_desk.risk import RiskConfig; r = run_insider_strategy(Strategy(name='smoke', kind='insider'), SyntheticInsiderBundle(days=60), RiskConfig()); assert r.metrics['trades'] > 0, r.metrics; print('smoke:', r.metrics['trades'], 'trades')"
 
   web:
     name: build dashboard

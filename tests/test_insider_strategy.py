@@ -5,8 +5,9 @@ build_events/filter_events pipeline, and the Lab's canonical variants /
 provider-factory wiring."""
 from __future__ import annotations
 
-from momentum_desk.edge.lab import CANONICAL, gauntlet_key, run_only
+from momentum_desk.edge.lab import CANONICAL, gauntlet_key, run_only, seed
 from momentum_desk.edge.result import AccountRun
+from momentum_desk.edge.store import LabStore
 from momentum_desk.edge.strategy import Strategy, run_strategy
 from momentum_desk.insider.bundles import SyntheticInsiderBundle
 from momentum_desk.insider.models import InsiderConfig
@@ -76,3 +77,30 @@ def test_run_insider_strategy_wires_config_and_risk():
     assert isinstance(run, AccountRun)
     assert run.starting_equity == 10_000.0
     assert run.config["min_value"] == 30_000.0
+
+
+def test_seed_backfills_insider_canonicals_into_nonempty_store(monkeypatch):
+    """Task 6 review finding: seed() only populated CANONICAL strategies into an
+    EMPTY store, so a pre-existing (non-empty) data/lab.db never got the 5 new
+    insider variants — the feature stayed invisible in a running Lab. seed()
+    must now backfill any missing CANONICAL name into a non-empty store, leave
+    pre-existing strategies untouched, and be idempotent (no duplicates)."""
+    monkeypatch.setenv("LAB_SEED", "off")
+    store = LabStore(":memory:")
+    pre_existing = Strategy(name="my-custom", kind="single", session="premarket")
+    store.save_strategy(pre_existing)
+
+    seed(store)
+
+    names = {s.name for s in store.list_strategies()}
+    insider_names = {s.name for s in CANONICAL if s.kind == "insider"}
+    assert insider_names <= names
+    assert "my-custom" in names
+    got = store.get_strategy("my-custom")
+    assert got == pre_existing
+
+    # idempotent: calling again doesn't duplicate rows
+    seed(store)
+    names_after = [s.name for s in store.list_strategies()]
+    assert len(names_after) == len(set(names_after))
+    assert insider_names <= set(names_after)
