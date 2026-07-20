@@ -226,7 +226,12 @@ function LeaderboardTab() {
                   <button title="set active" onClick={(e) => makeActive(e, r.strategy)} className="text-[13px]"
                     style={{ color: active === r.strategy ? "var(--green)" : "var(--muted)" }}>★</button>
                 </td>
-                <td className="px-3 py-1.5">{r.strategy}</td>
+                <td className="px-3 py-1.5">
+                  {r.strategy}
+                  {r.kind === "insider" && (
+                    <span className="mono text-[10px] px-1.5 py-0.5 rounded ml-2" style={{ color: "#caa24a", border: "1px solid #caa24a" }}>insider</span>
+                  )}
+                </td>
                 <td className="px-3 py-1.5 mono" style={{ color: rColor(r.metrics.expectancy_r) }}>{(r.metrics.expectancy_r ?? 0).toFixed(2)}</td>
                 <td className="px-3 py-1.5 mono">{(r.metrics.profit_factor ?? 0).toFixed(2)}</td>
                 <td className="px-3 py-1.5 mono">{(r.metrics.win_rate ?? 0).toFixed(0)}</td>
