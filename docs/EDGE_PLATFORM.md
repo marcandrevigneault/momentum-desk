@@ -157,9 +157,9 @@ Three canonical variants are seeded:
 
 - **Congress: member buys** — `min_amount` ≥$15,001 (drops the modal
   $1,001–$15,000 disclosure bracket)
-- **Congress: power buys** — leadership/committee-chair members only
-  (`power_only=True`)
-- **Congress: cluster buys** — ≥2 distinct members filing within a 30-day
+- **Congress: power buys** — leadership and committee chairs/ranking members
+  only (`power_only=True`)
+- **Congress: cluster buys** — ≥2 distinct members filing within a 30-calendar-day
   window (`cluster_n=2, cluster_window_days=30`)
 
 **Honest evidence framing:** this is research-tier. The literature says
