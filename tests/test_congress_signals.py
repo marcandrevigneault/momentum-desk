@@ -62,6 +62,15 @@ def test_asset_type_stock_only_accepts_both_vocabularies():
         assert len(events) == 1, f"asset_type={asset!r} should pass the stock filter"
 
 
+def test_asset_type_stock_only_case_insensitive_lowercase():
+    for asset in ["st", "stock"]:
+        trades = [mk(asset_type=asset)]
+        events = build_events(trades, CongressConfig(), DAYS)
+        assert len(events) == 1, f"asset_type={asset!r} should pass the stock filter"
+    trades = [mk(asset_type="op")]
+    assert build_events(trades, CongressConfig(), DAYS) == [], "asset_type='op' should be dropped"
+
+
 def test_asset_type_non_stock_dropped():
     for asset in ["OP", "OT", "Other", "Non-Public Stock", "Corporate Bond", "Cryptocurrency", "OL"]:
         trades = [mk(asset_type=asset)]

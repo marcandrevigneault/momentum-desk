@@ -260,8 +260,19 @@ class CongressStore:
 
         inserted_total = 0
         for name in names:
-            raw = self._get_filer_raw(name, fetch=fetch)
-            for t in parse_filer_json(raw):
+            if "/" in name or ".." in name:
+                # Untrusted index entry — reject before it ever touches a
+                # cache path (would otherwise let a malicious/broken index
+                # entry escape the cache dir or traverse elsewhere).
+                logger.warning("congress: skipping suspicious filer name %r", name)
+                continue
+            try:
+                raw = self._get_filer_raw(name, fetch=fetch)
+                filer_trades = parse_filer_json(raw)
+            except Exception:  # noqa: BLE001 - one bad filer must not sink the whole refresh
+                logger.warning("congress: fetch/parse failed for filer %r", name, exc_info=True)
+                continue
+            for t in filer_trades:
                 ticker = normalize_symbol(t.ticker)
                 if ticker is None:
                     continue

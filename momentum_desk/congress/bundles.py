@@ -176,8 +176,9 @@ class SyntheticCongressBundle:
 
 class RealCongressBundle:
     """CongressStore.refresh() (network-wrapped: a failure logs and degrades
-    to whatever the store already has, rather than crashing the run) +
-    PolygonDaily + insider's enrich_events via a polygon CachedClient.
+    to whatever the store already has, rather than crashing the run — unless
+    the store has nothing usable either, in which case it's an honest
+    ValueError instead of a silently empty run) + PolygonDaily.
     power=load_power(). name="polygon"."""
 
     name = "polygon"
@@ -203,6 +204,14 @@ class RealCongressBundle:
         try:
             self._store.refresh()
         except Exception:  # noqa: BLE001 - a network hiccup degrades to whatever's already cached
+            if not self._store.trades():
+                # No prior successful refresh and nothing local to fall back
+                # on — surfacing an honest error beats silently persisting
+                # an empty run. Caught by the server's ValueError->400
+                # handler.
+                raise ValueError(
+                    "congress data unavailable and no local store — retry later"
+                ) from None
             _log.warning("congress: refresh failed — using existing store contents", exc_info=True)
 
         trading_days = self._provider.trading_days()
@@ -217,7 +226,12 @@ class RealCongressBundle:
         trades = self._store.trades(end=trading_days[-1])
         power = self.power if cfg.power_only else None
         raw = build_events(trades, cfg, trading_days, min_filed=min_filed, power=power)
-        return enrich_events(raw, self._client, InsiderConfig())
+        # No client: congress has no cap/news knobs and never calls
+        # filter_events (deliberate — see module docstring), so enrichment
+        # would burn 2 unthrottled Polygon calls per event for zero
+        # consumers. Wire self._client back in if/when congress grows
+        # cap/news conditioning.
+        return enrich_events(raw, None, InsiderConfig())
 
 
 def run_congress_strategy(strategy: Strategy, bundle: CongressBundle, risk_cfg: RiskConfig) -> InsiderResult:

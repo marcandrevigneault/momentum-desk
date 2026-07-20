@@ -51,6 +51,7 @@ class InsiderEvent:
     total_value: float
     n_insiders: int
     top_role: str                  # "ceo" | "cfo" | "officer" | "director" | "10pct"
+                                    # (congress.signals reuses this field with "power" | "member")
     conviction: float               # total bought value / (value + holdings-after value), 0..1
     market_cap: float | None = None
     sector: str | None = None

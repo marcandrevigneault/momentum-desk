@@ -7,9 +7,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from momentum_desk.congress.bundles import RealCongressBundle
+import pytest
+
+from momentum_desk.congress.bundles import RealCongressBundle, run_congress_strategy
 from momentum_desk.congress.loader import CongressTrade
 from momentum_desk.congress.signals import CongressConfig
+from momentum_desk.edge.strategy import Strategy
+from momentum_desk.risk import RiskConfig
 
 
 @dataclass
@@ -79,6 +83,36 @@ def test_refresh_failure_logs_and_degrades_to_existing_store(caplog):
     assert isinstance(events, list)
     assert len(events) >= 1
     assert store.refreshed
+
+
+def test_refresh_failure_with_no_local_data_raises_valueerror():
+    """A cold store (no prior successful refresh, nothing cached) whose
+    refresh() also fails has nothing honest to serve — it must raise
+    ValueError rather than silently returning an empty (fake-looking)
+    result. Caught by the server's ValueError->400 handler."""
+    days = ["2025-03-10", "2025-03-11", "2025-03-12"]
+    store = FakeStore(raise_on_refresh=True)  # trades() stays empty
+    bundle = RealCongressBundle(
+        api_key="x", store=store, provider=FakeProvider(days=days),
+        client=FakeClient(), power=set(),
+    )
+
+    with pytest.raises(ValueError, match="congress data unavailable"):
+        bundle.events(CongressConfig())
+    assert store.refreshed
+
+
+def test_refresh_failure_with_no_local_data_propagates_through_run_congress_strategy():
+    days = ["2025-03-10", "2025-03-11", "2025-03-12"]
+    store = FakeStore(raise_on_refresh=True)
+    bundle = RealCongressBundle(
+        api_key="x", store=store, provider=FakeProvider(days=days),
+        client=FakeClient(), power=set(),
+    )
+    s = Strategy(name="cong", kind="congress")
+
+    with pytest.raises(ValueError, match="congress data unavailable"):
+        run_congress_strategy(s, bundle, RiskConfig())
 
 
 def test_min_filed_wired_from_price_window_start():

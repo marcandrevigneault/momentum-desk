@@ -450,6 +450,80 @@ def test_fetch_sends_user_agent(monkeypatch):
     assert captured["headers"].get("User-agent") == CONGRESS_UA
 
 
+def test_refresh_continues_past_a_failing_filer(tmp_path, caplog):
+    """A fetch/parse failure on one filer must not sink the whole refresh:
+    rows from the other (good) filers still get committed, the returned
+    count reflects only what succeeded, and a warning is logged."""
+    db_path = str(tmp_path / "congress.db")
+
+    def _raw(filer_id):
+        return _filer_json(
+            {"id": filer_id, "full_name": filer_id},
+            [
+                {
+                    "filer_id": filer_id,
+                    "transaction_date": "2024-01-01",
+                    "filing_date": "2024-01-10",
+                    "ticker": "MSFT",
+                }
+            ],
+        )
+
+    list_fetch = lambda url: _index_bytes(["a.json", "b.json", "c.json"])  # noqa: E731
+
+    def fetch(url):
+        if "b.json" in url:
+            raise RuntimeError("filer b is down")
+        name = url.rsplit("/", 1)[-1].removesuffix(".json")
+        return _raw(f"house_{name}")
+
+    store = CongressStore(db_path=db_path)
+    with caplog.at_level(logging.WARNING):
+        inserted = store.refresh(fetch=fetch, list_fetch=list_fetch)
+
+    assert inserted == 2  # filers a and c, not b
+    assert "b.json" in caplog.text or "b" in caplog.text
+    rows = store.trades()
+    assert len(rows) == 2
+    # the refreshes bookkeeping row and commit still happened despite the failure
+    refreshed_at = store._conn.execute("SELECT COUNT(*) FROM refreshes").fetchone()[0]
+    assert refreshed_at == 1
+
+
+def test_refresh_skips_malicious_filer_name(tmp_path, caplog):
+    """An index entry containing a path separator or `..` must be skipped
+    before it ever reaches a cache path (no traversal/escape), logged, and
+    must not prevent other filers from refreshing normally."""
+    db_path = str(tmp_path / "congress.db")
+    good_raw = _filer_json(
+        HOUSE_FILER,
+        [
+            {
+                "filer_id": "house_nancy_pelosi",
+                "transaction_date": "2024-01-01",
+                "filing_date": "2024-01-10",
+                "ticker": "MSFT",
+            }
+        ],
+    )
+    list_fetch = lambda url: _index_bytes(  # noqa: E731
+        ["../../etc/passwd", "sneaky/../name.json", "house_nancy_pelosi.json"]
+    )
+    fetched = []
+
+    def fetch(url):
+        fetched.append(url)
+        return good_raw
+
+    store = CongressStore(db_path=db_path)
+    with caplog.at_level(logging.WARNING):
+        inserted = store.refresh(fetch=fetch, list_fetch=list_fetch)
+
+    assert inserted == 1
+    assert len(fetched) == 1  # only the well-formed name was fetched
+    assert "passwd" in caplog.text or "sneaky" in caplog.text
+
+
 def test_refresh_logs_per_year_density(tmp_path, caplog):
     db_path = str(tmp_path / "congress.db")
     filer_raw = _filer_json(

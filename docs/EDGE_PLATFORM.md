@@ -151,7 +151,9 @@ daily-refresh) — per-filer JSON normalized into `data/congress.db`, ~54k
 transactions 2012→present across House and Senate. As with insider, the
 tradable event is the **filing (disclosure) date**, never the transaction
 date (disclosures lag by up to 45 days; trading on the transaction date is
-lookahead) — entry is at the next session's open.
+lookahead) — entry is at the next session's open. A cold real run backfills
+~437 filer files sequentially (~2–4 min) before the first backtest;
+subsequent runs reuse the 24h cache.
 
 Three canonical variants are seeded:
 
