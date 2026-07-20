@@ -30,6 +30,11 @@ const money2 = (v: number) => (v ?? 0).toLocaleString("en-US", { style: "currenc
 const rColor = (v: number) => (v >= 0 ? "var(--green)" : "var(--red)");
 const tod = (mins: number) => `${String(Math.floor((mins ?? 0) / 60)).padStart(2, "0")}:${String((mins ?? 0) % 60).padStart(2, "0")}`;
 
+const KIND_BADGES: Record<string, { label: string; color: string }> = {
+  insider: { label: "insider", color: "#caa24a" },
+  congress: { label: "congress", color: "#8a6fc4" },
+};
+
 const RANKS: { k: string; label: string }[] = [
   { k: "expectancy_r", label: "Expectancy R" },
   { k: "profit_factor", label: "Profit factor" },
@@ -228,8 +233,11 @@ function LeaderboardTab() {
                 </td>
                 <td className="px-3 py-1.5">
                   {r.strategy}
-                  {r.kind === "insider" && (
-                    <span className="mono text-[10px] px-1.5 py-0.5 rounded ml-2" style={{ color: "#caa24a", border: "1px solid #caa24a" }}>insider</span>
+                  {KIND_BADGES[r.kind] && (
+                    <span className="mono text-[10px] px-1.5 py-0.5 rounded ml-2"
+                      style={{ color: KIND_BADGES[r.kind].color, border: `1px solid ${KIND_BADGES[r.kind].color}` }}>
+                      {KIND_BADGES[r.kind].label}
+                    </span>
                   )}
                 </td>
                 <td className="px-3 py-1.5 mono" style={{ color: rColor(r.metrics.expectancy_r) }}>{(r.metrics.expectancy_r ?? 0).toFixed(2)}</td>

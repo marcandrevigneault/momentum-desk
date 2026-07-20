@@ -25,6 +25,10 @@ not emotionally.** Each item becomes a branch + PR; PRs must pass CI.
 - ✅ **Insider-filing strategy (event-driven, `kind="insider"`)** — shipped:
   SEC Form 4 signal engine, five canonical variants seeded as Lab strategies
   (appear on the leaderboard once a run executes), badge in the Lab UI. See `docs/EDGE_PLATFORM.md`.
+- ✅ **Congress-trading strategy (event-driven, `kind="congress"`)** — shipped:
+  STOCK Act disclosure signal engine, three canonical variants seeded as Lab
+  strategies (appear on the leaderboard once a run executes), badge in the
+  Lab UI. See `docs/EDGE_PLATFORM.md`.
 
 ## Principles every feature inherits
 - **Paper/mock defaults; live is an explicit, deliberate switch.**
