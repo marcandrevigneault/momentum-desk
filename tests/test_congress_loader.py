@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import time
 
 from momentum_desk.congress.loader import (
     CONGRESS_UA,
@@ -172,6 +174,56 @@ def test_dependent_child_owner_normalized_to_dc():
     assert parse_filer_json(raw)[0].owner == "DC"
 
 
+def test_spouse_full_word_normalized_to_sp():
+    raw = _filer_json(
+        SENATE_FILER,
+        [
+            {
+                "filer_id": "senate_thomasr_tillis",
+                "transaction_date": "2024-01-01",
+                "filing_date": "2024-01-10",
+                "ticker": "MSFT",
+                "owner": "Spouse",
+            }
+        ],
+    )
+    assert parse_filer_json(raw)[0].owner == "SP"
+
+
+def test_owner_case_robustness_mixed_casing():
+    raw = _filer_json(
+        HOUSE_FILER,
+        [
+            {
+                "filer_id": "house_nancy_pelosi",
+                "transaction_date": "2024-01-01",
+                "filing_date": "2024-01-10",
+                "ticker": "MSFT",
+                "owner": "spouse",  # lowercase
+            },
+            {
+                "filer_id": "house_nancy_pelosi",
+                "transaction_date": "2024-01-02",
+                "filing_date": "2024-01-11",
+                "ticker": "AAPL",
+                "owner": "JOINT",  # uppercase
+            },
+            {
+                "filer_id": "house_nancy_pelosi",
+                "transaction_date": "2024-01-03",
+                "filing_date": "2024-01-12",
+                "ticker": "GOOGL",
+                "owner": "Child",  # mixed case
+            },
+        ],
+    )
+    trades = parse_filer_json(raw)
+    assert len(trades) == 3
+    assert trades[0].owner == "SP"
+    assert trades[1].owner == "JT"
+    assert trades[2].owner == "DC"
+
+
 def test_bad_date_rows_skipped():
     raw = _filer_json(
         HOUSE_FILER,
@@ -291,6 +343,32 @@ def test_store_refresh_caches_raw_json_under_db_dir_and_reuses_fresh_cache(tmp_p
     # Second refresh should reuse the (fresh) cache file, not re-fetch.
     store.refresh(fetch=fetch, list_fetch=list_fetch)
     assert len(calls) == 1
+
+
+def test_store_refresh_refetches_stale_cache(tmp_path):
+    db_path = str(tmp_path / "congress.db")
+    filer_raw = _filer_json(HOUSE_FILER, [])
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        return filer_raw
+
+    list_fetch = lambda url: _index_bytes(["house_nancy_pelosi.json"])  # noqa: E731
+
+    store = CongressStore(db_path=db_path)
+    store.refresh(fetch=fetch, list_fetch=list_fetch)
+    cache_file = tmp_path / "cache" / "congress" / "house_nancy_pelosi.json"
+    assert cache_file.exists()
+    assert len(calls) == 1
+
+    # Make the cache file stale (older than 24h) by setting mtime to 26 hours ago.
+    stale_time = time.time() - (26 * 3600)
+    os.utime(str(cache_file), (stale_time, stale_time))
+
+    # Refresh should re-fetch because cache is stale.
+    store.refresh(fetch=fetch, list_fetch=list_fetch)
+    assert len(calls) == 2
 
 
 def test_store_refresh_respects_max_filers(tmp_path):
