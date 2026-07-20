@@ -54,6 +54,7 @@ class Strategy:
     max_gross_pct: float = 100.0
     legs: list[LegSpec] = field(default_factory=list)   # combo only
     insider: dict = field(default_factory=dict)         # insider kind only — InsiderConfig overrides
+    congress: dict = field(default_factory=dict)        # congress kind only — CongressConfig overrides
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -64,7 +65,9 @@ class Strategy:
         sizing = d.pop("sizing", None)
         legs = d.pop("legs", None) or []
         d_insider = d.pop("insider", None)
-        known = {f for f in cls.__dataclass_fields__ if f not in ("sizing", "legs", "insider")}  # type: ignore[attr-defined]
+        d_congress = d.pop("congress", None)
+        known = {f for f in cls.__dataclass_fields__  # type: ignore[attr-defined]
+                 if f not in ("sizing", "legs", "insider", "congress")}
         strat = cls(**{k: v for k, v in d.items() if k in known})
         if isinstance(sizing, dict):
             strat.sizing = SizingSpec(**{k: v for k, v in sizing.items()
@@ -72,6 +75,7 @@ class Strategy:
         strat.legs = [LegSpec(**{k: v for k, v in leg.items() if k in LegSpec.__dataclass_fields__})
                       for leg in legs if isinstance(leg, dict)]
         strat.insider = d_insider if isinstance(d_insider, dict) else {}
+        strat.congress = d_congress if isinstance(d_congress, dict) else {}
         return strat
 
 
@@ -91,6 +95,9 @@ def run_strategy(strategy: Strategy, provider_factory, *, account_equity: float 
     if strategy.kind == "insider":
         from ..insider.bundles import run_insider_strategy
         return run_insider_strategy(strategy, provider_factory("insider"), risk)
+    if strategy.kind == "congress":
+        from ..congress.bundles import run_congress_strategy
+        return run_congress_strategy(strategy, provider_factory("congress"), risk)
     if strategy.kind == "combo":
         legs = [
             ComboLeg(name=leg.name, provider=provider_factory(leg.session), session=leg.session,
