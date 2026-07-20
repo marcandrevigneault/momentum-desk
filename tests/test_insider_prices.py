@@ -3,6 +3,7 @@
 PolygonDaily's parsing + error handling via an injected CachedClient."""
 from __future__ import annotations
 
+import http.client
 import urllib.error
 
 from momentum_desk.backtest.client import CachedClient
@@ -121,3 +122,56 @@ def test_polygon_daily_client_defaults_when_none_given(tmp_path, monkeypatch):
     provider = PolygonDaily("KEY", days=10)
     assert isinstance(provider._client, CachedClient)
     assert str(provider._client._dir) == "data/cache/polygon"
+
+
+# --- malformed EDGAR symbols must not crash a real run --------------------
+#
+# EDGAR's ISSUERTRADINGSYMBOL sometimes leaks dirty values like
+# "HEI, HEI.A" (comma + space) all the way to the price provider. Before
+# the fix, that space/comma landed unencoded in the Polygon URL path and
+# urllib raised http.client.InvalidURL ("URL can't contain control
+# characters ... found at least ' '"), which PolygonDaily.daily only
+# caught for urllib.error.HTTPError — so it propagated and 500'd
+# /api/lab/run. daily() must URL-quote the symbol and treat any fetch
+# failure as "no data for this symbol" ([]), not a hard crash.
+
+
+def test_polygon_daily_quotes_dirty_symbol_into_url_path(tmp_path):
+    seen_urls = []
+
+    def fake(url):
+        seen_urls.append(url)
+        return {"results": []}
+
+    client = CachedClient("https://api.polygon.io", "KEY", cache_dir=str(tmp_path),
+                          max_per_min=0, fetch=fake)
+    provider = PolygonDaily("KEY", days=10, client=client)
+    provider.daily("HEI, HEI.A")
+    assert seen_urls, "expected the client to be called"
+    assert " " not in seen_urls[0]
+    assert "," not in seen_urls[0]
+
+
+def test_polygon_daily_returns_empty_on_invalid_url(tmp_path):
+    def fake(url):
+        # Reproduces the exact crash seen in production: a raw space in an
+        # unquoted URL trips http.client's control-character guard.
+        raise http.client.InvalidURL(
+            "URL can't contain control characters. "
+            "'/v2/aggs/ticker/HEI, HEI.A/range/1/day' (found at least ' ')"
+        )
+
+    client = CachedClient("https://api.polygon.io", "KEY", cache_dir=str(tmp_path),
+                          max_per_min=0, fetch=fake)
+    provider = PolygonDaily("KEY", days=10, client=client)
+    assert provider.daily("HEI, HEI.A") == []
+
+
+def test_polygon_daily_returns_empty_on_url_error(tmp_path):
+    def fake(url):
+        raise urllib.error.URLError("boom")
+
+    client = CachedClient("https://api.polygon.io", "KEY", cache_dir=str(tmp_path),
+                          max_per_min=0, fetch=fake)
+    provider = PolygonDaily("KEY", days=10, client=client)
+    assert provider.daily("ACME") == []

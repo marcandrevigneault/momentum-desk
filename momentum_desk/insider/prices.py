@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import random
-import urllib.error
+import urllib.parse
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -114,12 +114,18 @@ class PolygonDaily:
 
     def daily(self, symbol: str) -> list[DailyBar]:
         start, end = self._range()
+        quoted = urllib.parse.quote(symbol, safe="")
         try:
             r = self._client.get_json(
-                f"/v2/aggs/ticker/{symbol}/range/1/day/{start}/{end}",
+                f"/v2/aggs/ticker/{quoted}/range/1/day/{start}/{end}",
                 {"adjusted": "true", "sort": "asc", "limit": 5000},
             )
-        except urllib.error.HTTPError:
+        except Exception:
+            # Malformed EDGAR-derived symbols (e.g. "HEI, HEI.A" — a comma
+            # and space, which urllib.request rejects with InvalidURL
+            # before this even becomes an HTTP request) and any other
+            # fetch failure both mean "no data for this symbol" per the
+            # DailyProvider contract, not a reason to sink the whole run.
             return []
         bars = [
             DailyBar(

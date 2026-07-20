@@ -10,7 +10,9 @@ from __future__ import annotations
 import io
 import zipfile
 
-from momentum_desk.insider.edgar import SEC_UA, EdgarStore, parse_quarter_zip
+import pytest
+
+from momentum_desk.insider.edgar import SEC_UA, EdgarStore, normalize_symbol, parse_quarter_zip
 
 SUBMISSION_TSV = (
     "ACCESSION_NUMBER\tFILING_DATE\tISSUERTRADINGSYMBOL\tDOCUMENT_TYPE\n"
@@ -199,3 +201,68 @@ def test_fetch_sends_user_agent(monkeypatch):
     assert result == b"zip-bytes"
     # urllib normalizes header casing to Title-Case
     assert captured["headers"].get("User-agent") == SEC_UA
+
+
+# --- normalize_symbol ----------------------------------------------------
+#
+# EDGAR's ISSUERTRADINGSYMBOL is free text, not a validated ticker field:
+# dual-class filers report both symbols comma-joined ("HEI, HEI.A"), some
+# filers lowercase it, and some filers just leave junk ("N/A"). Values like
+# these flowed unencoded into Polygon URL paths and crashed real runs with
+# `http.client.InvalidURL` — normalize_symbol is the fix, applied both at
+# ingest (parse_quarter_zip) and at read time (EdgarStore.filings) so the
+# already-populated 571k-row DB doesn't need a re-ingest.
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("HEI, HEI.A", "HEI"),
+        ("BRK.B", "BRK.B"),
+        ("hei", "HEI"),
+        ("N/A", None),          # "/" fails the character class
+        ("", None),
+        (None, None),
+        ("TOOLONGSYMBOL", None),  # 13 chars, exceeds the 10-char cap
+    ],
+)
+def test_normalize_symbol(raw, expected):
+    assert normalize_symbol(raw) == expected
+
+
+# --- EdgarStore.filings() read-time normalization -------------------------
+
+
+def test_filings_normalizes_dirty_symbol_at_read_time(tmp_path):
+    """Simulates the already-populated DB: rows inserted with EDGAR's raw,
+    unnormalized symbol (bypassing parse_quarter_zip's ingest-time
+    normalization) must still come back clean from filings(), since the
+    571k existing rows were never re-ingested."""
+    db_path = str(tmp_path / "insider.db")
+    store = EdgarStore(db_path=db_path)
+    store._conn.execute(
+        """
+        INSERT INTO filings (
+          accession, symbol, filed, trans_date, code, shares, price,
+          owner_name, is_ceo, is_cfo, is_officer, is_director,
+          is_ten_pct, officer_title, tenb5_1, shares_owned_after
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("acc-dirty", "HEI, HEI.A", "2024-01-04", "2024-01-04", "P",
+         1000, 12.5, "Jane Doe", 0, 0, 1, 0, 0, "", 0, 5000),
+    )
+    store._conn.execute(
+        """
+        INSERT INTO filings (
+          accession, symbol, filed, trans_date, code, shares, price,
+          owner_name, is_ceo, is_cfo, is_officer, is_director,
+          is_ten_pct, officer_title, tenb5_1, shares_owned_after
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("acc-garbage", "N/A", "2024-01-05", "2024-01-05", "P",
+         100, 5.0, "No Symbol Owner", 0, 1, 0, 0, 0, "", 0, 200),
+    )
+    store._conn.commit()
+
+    rows = store.filings()
+    assert len(rows) == 1
+    assert rows[0].accession == "acc-dirty"
+    assert rows[0].symbol == "HEI"

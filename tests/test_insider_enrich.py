@@ -155,6 +155,29 @@ def test_profile_failure_does_not_blank_successful_news(tmp_path):
     assert events[0].news_headline == "ACME wins big contract"
 
 
+def test_profile_quotes_dirty_symbol_into_url_path(tmp_path):
+    """Malformed EDGAR symbols like "HEI, HEI.A" (comma + space) must not
+    reach the /v3/reference/tickers/{sym} path unencoded — that's the exact
+    shape that crashed real runs with http.client.InvalidURL. The news
+    endpoint takes its symbol via a urlencode'd params dict (already
+    safe); only the profile path interpolation needed the fix."""
+    seen_urls = []
+
+    def fake(url):
+        seen_urls.append(url)
+        if "/v3/reference/tickers/" in url:
+            return {"results": {}}
+        return {"results": []}
+
+    client = _client(fake, tmp_path)
+    cfg = InsiderConfig()
+    enrich_events([mk_event(sym="HEI, HEI.A")], client, cfg)
+    profile_urls = [u for u in seen_urls if "/v3/reference/tickers/" in u]
+    assert profile_urls, "expected a profile call"
+    assert " " not in profile_urls[0]
+    assert "," not in profile_urls[0]
+
+
 def test_news_failure_does_not_blank_successful_profile(tmp_path):
     def fake(url):
         if "/v3/reference/tickers/" in url:

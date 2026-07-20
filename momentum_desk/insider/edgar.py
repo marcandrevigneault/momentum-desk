@@ -15,6 +15,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+import re
 import sqlite3
 import time
 import urllib.request
@@ -24,6 +25,30 @@ from datetime import date, datetime
 from .models import InsiderFiling
 
 SEC_UA = "momentum-desk marcandre.vigneault.96@gmail.com"
+
+_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
+
+
+def normalize_symbol(raw: str) -> str | None:
+    """Cleans EDGAR's free-text ISSUERTRADINGSYMBOL field into a usable
+    ticker, or None if it can't be salvaged.
+
+    EDGAR's field is notoriously dirty: multi-symbol values like
+    "HEI, HEI.A" (dual share classes reported together), lowercase, and
+    placeholder junk like "n/a". We take the first comma- or
+    whitespace-separated token, uppercase it, and only accept it if it
+    looks like a real ticker (starts with a letter, only letters/digits/
+    dot/hyphen, max 10 chars total) — this rejects "N/A" (the "/" fails
+    the character class) and anything absurdly long."""
+    if not raw:
+        return None
+    stripped = raw.strip()
+    if not stripped:
+        return None
+    token = re.split(r"[,\s]+", stripped, maxsplit=1)[0].upper()
+    if _SYMBOL_RE.match(token):
+        return token
+    return None
 
 ZIP_URL_PATTERNS = [
     "https://www.sec.gov/files/structureddata/data/insider-transactions-data-sets/{yq}_form345.zip",
@@ -158,7 +183,7 @@ def parse_quarter_zip(zip_bytes: bytes) -> list[InsiderFiling]:
         sub = sub_by_acc.get(acc, {})
         owner = owner_by_acc.get(acc, {})
 
-        symbol = (sub.get("ISSUERTRADINGSYMBOL") or "").strip()
+        symbol = normalize_symbol(sub.get("ISSUERTRADINGSYMBOL") or "")
         doc_type = (sub.get("DOCUMENT_TYPE") or "").strip()
         if not symbol or doc_type not in ("4", "4/A"):
             continue
@@ -313,15 +338,25 @@ class EdgarStore:
         query += " ORDER BY filed"
 
         rows = self._conn.execute(query, params).fetchall()
-        return [
-            InsiderFiling(
-                accession=r[0], symbol=r[1], filed=r[2], trans_date=r[3], code=r[4],
-                shares=r[5], price=r[6], owner_name=r[7], is_ceo=bool(r[8]), is_cfo=bool(r[9]),
-                is_officer=bool(r[10]), is_director=bool(r[11]), is_ten_pct=bool(r[12]),
-                officer_title=r[13], tenb5_1=bool(r[14]), shares_owned_after=r[15],
+        out: list[InsiderFiling] = []
+        for r in rows:
+            # The already-populated DB predates symbol normalization at
+            # ingest time (and future ingests could still race a schema
+            # change), so re-normalize here too and drop what still can't
+            # be salvaged — read-time is the only place guaranteed to see
+            # every row regardless of when/how it was inserted.
+            symbol = normalize_symbol(r[1] or "")
+            if symbol is None:
+                continue
+            out.append(
+                InsiderFiling(
+                    accession=r[0], symbol=symbol, filed=r[2], trans_date=r[3], code=r[4],
+                    shares=r[5], price=r[6], owner_name=r[7], is_ceo=bool(r[8]), is_cfo=bool(r[9]),
+                    is_officer=bool(r[10]), is_director=bool(r[11]), is_ten_pct=bool(r[12]),
+                    officer_title=r[13], tenb5_1=bool(r[14]), shares_owned_after=r[15],
+                )
             )
-            for r in rows
-        ]
+        return out
 
 
 def _ensure_parent_dir(path: str) -> None:

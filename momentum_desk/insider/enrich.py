@@ -14,6 +14,7 @@ blow up a backtest or the live loop.
 from __future__ import annotations
 
 import datetime as dt
+import urllib.parse
 from dataclasses import replace
 
 from ..backtest.client import CachedClient
@@ -49,7 +50,7 @@ def _enrich_one(event: InsiderEvent, client: CachedClient, cfg: InsiderConfig) -
 
 def _profile(symbol: str, client: CachedClient) -> tuple[float | None, str | None]:
     try:
-        r = client.get_json(f"/v3/reference/tickers/{symbol}")
+        r = client.get_json(f"/v3/reference/tickers/{urllib.parse.quote(symbol, safe='')}")
         results = r.get("results") or {}
         return results.get("market_cap"), results.get("sic_description")
     except Exception:
