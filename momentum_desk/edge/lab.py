@@ -69,7 +69,9 @@ def _provider_factory(days: int, data_source: str):
 
         def _polygon(session: str):
             if session == "insider":
-                return RealInsiderBundle(api_key=key, days=days)
+                # max_per_min=0 matches PolygonHistory below — the Lab has always
+                # run this key unthrottled; CachedClient still backs off on 429s.
+                return RealInsiderBundle(api_key=key, days=days, max_per_min=0)
             return PolygonHistory(
                 api_key=key, days=days,
                 universe_mode="active" if session == "intraday" else "gap", max_per_min=0)
