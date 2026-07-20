@@ -364,6 +364,12 @@ async def lifespan(app: FastAPI):
     print(f"[server] feed={app.state.service.adapter.name} mode={cfg.mode} "
           f"interval={cfg.scan_interval_s}s")
 
+    # A polygon key in config.yaml counts for the Lab too: the Lab picks its
+    # data source from the environment only (so tests stay hermetic), so the
+    # server — the config-aware boundary — exports it once at boot.
+    if cfg.polygon_api_key and not os.environ.get("POLYGON_API_KEY"):
+        os.environ["POLYGON_API_KEY"] = cfg.polygon_api_key
+
     # Strategy Lab store (SQLite on the data volume), seeded with the canonical
     # strategies so the leaderboard isn't empty on a fresh deploy.
     from .edge.lab import seed as _seed_lab

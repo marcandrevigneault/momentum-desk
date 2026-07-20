@@ -6,6 +6,7 @@ import os
 
 os.environ["LAB_DB"] = ":memory:"   # set before the app's lifespan opens the store
 os.environ["LAB_SEED"] = "off"      # skip the heavy committed seed in tests
+os.environ["MOMENTUM_CONFIG"] = "nonexistent-test-config.yaml"  # a dev's real config.yaml must not leak in
 
 from fastapi.testclient import TestClient  # noqa: E402
 

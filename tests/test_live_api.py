@@ -7,6 +7,7 @@ import os
 
 os.environ["LAB_DB"] = ":memory:"
 os.environ["LAB_SEED"] = "off"
+os.environ["MOMENTUM_CONFIG"] = "nonexistent-test-config.yaml"  # a dev's real config.yaml must not leak in
 
 from fastapi.testclient import TestClient  # noqa: E402
 

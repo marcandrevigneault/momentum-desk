@@ -41,6 +41,9 @@ def _coerce(cls, data: dict[str, Any]):
 
 
 def load_config(path: str = "config.yaml") -> AppConfig:
+    # MOMENTUM_CONFIG points at an alternate file; tests point it at a
+    # nonexistent path so a developer's real config.yaml never leaks into runs.
+    path = os.environ.get("MOMENTUM_CONFIG", path)
     raw: dict[str, Any] = {}
     if os.path.exists(path):
         try:
