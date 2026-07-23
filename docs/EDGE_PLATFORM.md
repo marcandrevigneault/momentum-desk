@@ -140,3 +140,40 @@ Market cap/sector enrichment is sourced from Polygon's CURRENT reference data
 (as-of-today, not as-of-filing), so conditioning on small-cap over long
 backtests carries some misclassification bias (a company's cap changes over
 years) — a Phase 2 item is to make this enrichment point-in-time.
+
+## Congress strategies (event-driven)
+
+`momentum_desk/congress/` reuses the insider event engine for `Strategy.kind
+= "congress"` signals built from STOCK Act periodic transaction reports —
+member/spouse/dependent-joint trades that Members of Congress must disclose.
+Data source: the **kadoa-org/congress-trading-monitor** dataset (GitHub, MIT,
+daily-refresh) — per-filer JSON normalized into `data/congress.db`, ~54k
+transactions 2012→present across House and Senate. As with insider, the
+tradable event is the **filing (disclosure) date**, never the transaction
+date (disclosures lag by up to 45 days; trading on the transaction date is
+lookahead) — entry is at the next session's open. A cold real run backfills
+~437 filer files sequentially (~2–4 min) before the first backtest;
+subsequent runs reuse the 24h cache.
+
+Three canonical variants are seeded:
+
+- **Congress: member buys** — `min_amount` ≥$15,001 (drops the modal
+  $1,001–$15,000 disclosure bracket)
+- **Congress: power buys** — leadership and committee chairs/ranking members
+  only (`power_only=True`)
+- **Congress: cluster buys** — ≥2 distinct members filing within a 30-calendar-day
+  window (`cluster_n=2, cluster_window_days=30`)
+
+**Honest evidence framing:** this is research-tier. The literature says
+aggregate copy-congress alpha is approximately **zero post-2012** — simply
+mirroring any disclosed trade is not an edge. What's actually being tested
+here are the two conditional signals the evidence suggests might survive:
+**power-member** status (leadership/committee chairs) and a **short-side**
+signal (not built in v1 — the simulator is long-only). Committee-sector
+overlap was probed and empirically rejected, so it isn't implemented. Expect
+these variants to plausibly fail on our own bar — that's the point of
+running them through the Lab rather than assuming the headline result.
+
+Leaderboard rows for these runs carry `kind: "congress"` and show a small
+"congress" badge in the Lab UI. Full design, evidence, and signal
+construction: `docs/superpowers/specs/2026-07-19-congress-strategy-design.md`.

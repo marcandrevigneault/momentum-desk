@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from ..backtest.providers import PolygonHistory, SyntheticHistory
+from ..congress.bundles import RealCongressBundle, SyntheticCongressBundle
 from ..insider.bundles import RealInsiderBundle, SyntheticInsiderBundle
 from .store import LabStore
 from .strategy import LegSpec, Strategy, run_strategy
@@ -39,6 +40,12 @@ CANONICAL: list[Strategy] = [
                       "include_unknown_cap": False}),
     Strategy(name="Insider: news-quiet buys", kind="insider",
              insider={"roles": "officer", "news_filter": "quiet"}),
+    Strategy(name="Congress: member buys", kind="congress",
+             congress={"min_amount": 15_001.0}),
+    Strategy(name="Congress: power buys", kind="congress",
+             congress={"power_only": True}),
+    Strategy(name="Congress: cluster buys", kind="congress",
+             congress={"cluster_n": 2, "cluster_window_days": 30}),
 ]
 
 _DAYS = {"1y": 252, "5y": 1260}
@@ -72,6 +79,9 @@ def _provider_factory(days: int, data_source: str):
                 # max_per_min=0 matches PolygonHistory below — the Lab has always
                 # run this key unthrottled; CachedClient still backs off on 429s.
                 return RealInsiderBundle(api_key=key, days=days, max_per_min=0)
+            if session == "congress":
+                # Same unthrottled-key rationale as the insider branch above.
+                return RealCongressBundle(api_key=key, days=days, max_per_min=0)
             return PolygonHistory(
                 api_key=key, days=days,
                 universe_mode="active" if session == "intraday" else "gap", max_per_min=0)
@@ -80,6 +90,8 @@ def _provider_factory(days: int, data_source: str):
     def _synthetic(session: str):
         if session == "insider":
             return SyntheticInsiderBundle(days=days)
+        if session == "congress":
+            return SyntheticCongressBundle(days=days)
         return SyntheticHistory(days=days, session=session)
     return _synthetic
 

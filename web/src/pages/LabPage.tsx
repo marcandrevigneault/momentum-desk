@@ -30,6 +30,11 @@ const money2 = (v: number) => (v ?? 0).toLocaleString("en-US", { style: "currenc
 const rColor = (v: number) => (v >= 0 ? "var(--green)" : "var(--red)");
 const tod = (mins: number) => `${String(Math.floor((mins ?? 0) / 60)).padStart(2, "0")}:${String((mins ?? 0) % 60).padStart(2, "0")}`;
 
+const KIND_BADGES: Record<string, { label: string; color: string }> = {
+  insider: { label: "insider", color: "#caa24a" },
+  congress: { label: "congress", color: "#8a6fc4" },
+};
+
 const RANKS: { k: string; label: string }[] = [
   { k: "expectancy_r", label: "Expectancy R" },
   { k: "profit_factor", label: "Profit factor" },
@@ -80,6 +85,7 @@ function LeaderboardTab() {
   const [gaunt, setGaunt] = useState<any | null>(null);
   const [dry, setDry] = useState<any | null>(null);
   const [focusTrade, setFocusTrade] = useState<FocusTrade | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const reloadBoard = async (rb = rankBy, w = win) => setBoard(await getLeaderboard(rb, w));
   const reloadStrats = async () => {
@@ -88,6 +94,20 @@ function LeaderboardTab() {
   };
   useEffect(() => { reloadStrats(); }, []);
   useEffect(() => { reloadBoard(rankBy, win); }, [rankBy, win]);
+
+  // Browser Back steps out one layer at a time (trade focus → strategy detail
+  // → leaderboard) instead of leaving the page. Each layer pushes a history
+  // entry when it opens; popstate closes the deepest open layer.
+  useEffect(() => { if (focusTrade) window.history.pushState({ lab: "focus" }, ""); }, [focusTrade]);
+  useEffect(() => { if (selected) window.history.pushState({ lab: "detail" }, ""); }, [selected?.id]);
+  useEffect(() => {
+    const onPop = () => {
+      if (focusTrade) setFocusTrade(null);
+      else if (selected) { setSelected(null); setGaunt(null); setDry(null); setMonthFilter(null); }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [focusTrade, selected]);
 
   const pickRow = async (r: LeaderRow) => {
     setMonthFilter(null); setGaunt(null); setDry(null);
@@ -190,8 +210,41 @@ function LeaderboardTab() {
               </button>
             ))}
           </div>
+          <button onClick={() => setShowHelp(!showHelp)} className="mono text-[11px] px-2 py-1 rounded"
+            style={{ background: showHelp ? "var(--panel-2)" : "transparent", border: "1px solid var(--line)", color: "var(--muted)" }}
+            title="how the strategy families trade">? how it trades</button>
         </div>
       </div>
+
+      {/* explainer — what each strategy family actually does on the tape */}
+      {showHelp && (
+        <div className="rounded-lg p-3 flex flex-col gap-2 text-[12px]" style={{ background: "var(--panel)", border: "1px solid var(--line)", lineHeight: 1.55 }}>
+          <div>
+            <b>Intraday momentum</b> <span className="mono text-[10px]" style={{ color: "var(--muted)" }}>(no badge)</span> —
+            day-trading. Scans for low-float gappers/high-RVOL names, buys the session breakout (opening-range / high-of-day),
+            manages with a trailing stop, and is <b>flat by the close</b> — holds are minutes to hours, never overnight.
+          </div>
+          <div>
+            <b>Insider</b> <span className="mono text-[10px] px-1.5 py-0.5 rounded" style={{ color: "#caa24a", border: "1px solid #caa24a" }}>insider</span> —
+            event-driven <b>swing trading</b>. The event is a SEC Form 4 filing: a CEO/CFO/officer/director reporting a significant
+            open-market purchase of their own stock. Entry is the <b>next session's open</b> after the filing (never the trade date —
+            that's lookahead), then the position is held <b>days to weeks</b> (default 20 trading days) with a hard stop (−20%),
+            a trailing stop from the highest close (−15%), and a time stop — first hit wins. Variants filter the same stream:
+            CEO/CFO-only, clusters (≥2 insiders in 10 days), small-caps, no-recent-news.
+          </div>
+          <div>
+            <b>Congress</b> <span className="mono text-[10px] px-1.5 py-0.5 rounded" style={{ color: "#8a6fc4", border: "1px solid #8a6fc4" }}>congress</span> —
+            same swing engine, different event: a STOCK Act disclosure that a member of Congress (or spouse) bought a stock.
+            Entry next open after the <b>disclosure</b> (filings lag the trade by up to 45 days), hold ~21 trading days, same
+            stop/trail/time exits. Variants: all member buys ≥$15k, leadership/chairs only, clusters (≥2 members in 30 days).
+            Research-tier: the published evidence for aggregate copy-congress alpha is weak — the Lab is the judge.
+          </div>
+          <div style={{ color: "var(--muted)" }}>
+            Every fill is simulated with slippage + commissions; metrics are raw long P&amp;L (not market-adjusted).
+            Expectancy (R) is P&amp;L per trade in units of the risk taken; PF &gt; 1 means gross wins exceed gross losses.
+          </div>
+        </div>
+      )}
 
       {/* leaderboard — one row per strategy, its cached run for the window */}
       <div className="rounded-lg overflow-hidden" style={{ background: "var(--panel)", border: "1px solid var(--line)" }}>
@@ -228,8 +281,11 @@ function LeaderboardTab() {
                 </td>
                 <td className="px-3 py-1.5">
                   {r.strategy}
-                  {r.kind === "insider" && (
-                    <span className="mono text-[10px] px-1.5 py-0.5 rounded ml-2" style={{ color: "#caa24a", border: "1px solid #caa24a" }}>insider</span>
+                  {KIND_BADGES[r.kind] && (
+                    <span className="mono text-[10px] px-1.5 py-0.5 rounded ml-2"
+                      style={{ color: KIND_BADGES[r.kind].color, border: `1px solid ${KIND_BADGES[r.kind].color}` }}>
+                      {KIND_BADGES[r.kind].label}
+                    </span>
                   )}
                 </td>
                 <td className="px-3 py-1.5 mono" style={{ color: rColor(r.metrics.expectancy_r) }}>{(r.metrics.expectancy_r ?? 0).toFixed(2)}</td>

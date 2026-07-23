@@ -98,7 +98,7 @@ export default function TradeFocus({ trade, onClose }: { trade: FocusTrade; onCl
           </span>
           <button onClick={onClose} className="ml-auto mono text-[11px] px-2 py-1 rounded"
             style={{ background: "var(--panel-2)", border: "1px solid var(--line)", color: "var(--muted)" }}
-            title="close (Esc)">✕ close</button>
+            title="back to strategy (Esc, browser Back, or click outside)">← back to strategy</button>
         </div>
         <div className="grow min-h-0 relative">
           <CandleChart candles={candles} entry={trade.entry} exitPrice={trade.exit} markers={markers} />

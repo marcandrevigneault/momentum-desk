@@ -63,6 +63,59 @@ def test_lab_api_create_and_run_insider(monkeypatch):
         assert run["result"]["config"].get("roles") == "ceo_cfo"
 
 
+def test_lab_api_create_and_run_congress(monkeypatch):
+    """kind='congress' end-to-end through the HTTP API: save an inline
+    strategy, run it on the synthetic bundle, confirm the congress path was
+    actually exercised. No data key -> best_data_source() picks synthetic
+    regardless of the environment running the suite."""
+    monkeypatch.delenv("POLYGON_API_KEY", raising=False)
+    monkeypatch.delenv("MASSIVE_API_KEY", raising=False)
+    with TestClient(app) as c:
+        r = c.post("/api/lab/strategies", json={
+            "name": "My congress", "kind": "congress", "congress": {"power_only": True},
+        })
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] and body["strategy"]["kind"] == "congress"
+
+        r = c.post("/api/lab/run", json={"name": "My congress", "window": "1y", "data_source": "synthetic"})
+        assert r.status_code == 200
+        run = r.json()
+        assert run["ok"]
+        assert run["data_source"] == "synthetic"
+        assert run["result"]["metrics"]["trades"] >= 0
+        assert run["result"]["config"].get("power_only") is True
+
+
+def test_lab_api_bad_congress_owners_returns_400_not_500(monkeypatch):
+    """Same shape as the insider unknown-roles review finding: an
+    unrecognized `owners` entry must come back as a clean 400, not an
+    uncaught 500 inside the /api/lab/run worker thread."""
+    monkeypatch.delenv("POLYGON_API_KEY", raising=False)
+    monkeypatch.delenv("MASSIVE_API_KEY", raising=False)
+    with TestClient(app) as c:
+        r = c.post("/api/lab/strategies", json={
+            "name": "Bad owners", "kind": "congress", "congress": {"owners": ["SELF", "BOGUS"]},
+        })
+        assert r.status_code == 200
+        assert r.json()["ok"]
+
+        r = c.post("/api/lab/run", json={"name": "Bad owners", "window": "1y", "data_source": "synthetic"})
+        assert r.status_code == 400
+        body = r.json()
+        assert body["ok"] is False
+        assert "owner" in body["error"]
+
+        # a valid owners value on the same route still succeeds (200)
+        r = c.post("/api/lab/strategies", json={
+            "name": "Good owners", "kind": "congress", "congress": {"owners": ["SELF"]},
+        })
+        assert r.status_code == 200
+        r = c.post("/api/lab/run", json={"name": "Good owners", "window": "1y", "data_source": "synthetic"})
+        assert r.status_code == 200
+        assert r.json()["ok"]
+
+
 def test_lab_api_unknown_insider_roles_returns_400_not_500(monkeypatch):
     """Review finding: an unrecognized `roles` string (e.g. from a stray
     client) reaches signals._role_pass's ValueError uncaught inside the
